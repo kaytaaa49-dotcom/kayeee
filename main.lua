@@ -1,4 +1,4 @@
--- kayeshiHUB v2.1 - Dark Pink Premium Edition
+-- kayeshiHUB v2.2 - YATIM LO KONTOL
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local StarterGui = game:GetService("StarterGui")
@@ -21,7 +21,7 @@ local function notify(text)
     end)
 end
 
-notify("kayeshiHUB v2.1 memuat...")
+notify("kayeshiHUB v2.2 memuat...")
 
 -- ===== THEME DARK PINK =====
 local C = {
@@ -75,7 +75,7 @@ local EGG_LIST = {
     {"Golem Egg", "Unknown"},
 }
 
--- Alias database untuk deteksi yang lebih akurat
+-- Alias database
 local EGG_ALIASES = {
     ["common"] = "common egg",
     ["coral"] = "coral egg",
@@ -113,7 +113,6 @@ for i, e in ipairs(EGG_LIST) do
     table.insert(EGG_KEYS, key)
 end
 
--- Tambahkan alias ke database
 for alias, real in pairs(EGG_ALIASES) do
     if not EGG[alias] and EGG[real] then
         EGG[alias] = EGG[real]
@@ -139,6 +138,7 @@ local BAD_ANCESTOR = {"hatch", "place", "plant", "incubat", "machine", "shop", "
 local BAD_PROMPT = {"inventory", "place", "plant", "incubat", "hatch", "shop", "buy", "sell", "tukar"}
 local BAD_CHAIN = {"generator", "shop", "npc", "citadel", "merchant", "tukar", "swap", "event", "halloween", "pumpkins"}
 local MACHINE_WORDS = {"place", "plant", "incubat", "hatch", "inventory"}
+local PLACE_AREA_WORDS = {"place", "plant", "incubat", "machine", "mesin", "incubator"}
 local LOW_OFF = {
     ParticleEmitter = true, Trail = true, Beam = true, Smoke = true, Fire = true, Sparkles = true,
     PointLight = true, SpotLight = true, SurfaceLight = true, Clouds = true,
@@ -253,14 +253,14 @@ local function eggOf(text)
         return EGG[EGG_ALIASES[l]]
     end
     
-    -- Partial match (more aggressive)
+    -- Partial match
     for _, k in ipairs(EGG_KEYS) do
         if string.find(l, k, 1, true) then
             return EGG[k]
         end
     end
     
-    -- Fuzzy match: check if any egg name is contained in the text
+    -- Fuzzy match
     for _, eggData in pairs(EGG) do
         if eggData.name and string.find(l, string.lower(eggData.name), 1, true) then
             return eggData
@@ -316,7 +316,7 @@ local function clearVisuals()
     end
 end
 
--- ===== IMPROVED kindOf with better egg detection =====
+-- ===== IMPROVED kindOf =====
 local function kindOf(obj)
     if obj:IsA("ProximityPrompt") then
         return "prompt"
@@ -332,27 +332,22 @@ local function kindOf(obj)
         return "trail"
     end
     
-    -- Egg detection - check name first
+    -- Egg detection
     local eggInfo = eggOf(obj.Name)
     if eggInfo then
-        -- Skip if name contains bad words (machines, etc)
         if hasAny(n, BAD_NAME) then
-            -- But check if it's actually an egg model with egg in name
             if string.find(n, "egg", 1, true) and not hasAny(n, {"hatch", "incubat", "inventor"}) then
                 return "egg"
             end
             return nil
         end
         
-        -- Skip if parent is also an egg (nested)
         if obj:IsA("BasePart") and obj.Parent and eggOf(obj.Parent.Name) then
             return nil
         end
         
-        -- Check ancestor chain
         local chain = chainOf(obj)
         if hasAny(chain, BAD_ANCESTOR) then
-            -- But allow if it's clearly an egg model
             if obj:IsA("Model") and eggInfo and not hasAny(chain, {"hatch", "incubat", "inventor"}) then
                 return "egg"
             end
@@ -362,9 +357,7 @@ local function kindOf(obj)
         return "egg"
     end
     
-    -- Check if object contains egg in name but wasn't matched
     if string.find(n, "egg", 1, true) and not hasAny(n, BAD_NAME) then
-        -- Try to find closest match
         for _, eggData in pairs(EGG) do
             if eggData.name and string.find(n, string.lower(eggData.name):gsub(" ", ""), 1, true) then
                 return "egg"
@@ -372,9 +365,7 @@ local function kindOf(obj)
         end
     end
     
-    -- Check for egg-like attributes (Size, Shape)
     if obj:IsA("BasePart") and obj.Size.Y < 5 and obj.Size.X < 5 and obj.Size.Z < 5 then
-        -- Check if it's a small part that could be an egg
         local parent = obj.Parent
         if parent and parent:IsA("Model") then
             local parentName = string.lower(parent.Name)
@@ -452,9 +443,74 @@ local function nearMachine(pos)
     return false
 end
 
--- ===== IMPROVED eggPromptOf =====
+-- ===== IMPROVED PLACE AREA DETECTION =====
+local function isInPlaceArea(obj)
+    -- Check if object is near a place/incubator machine
+    local part = partOf(obj)
+    if not part then
+        return false
+    end
+    
+    local pos = part.Position
+    
+    -- Check proximity to place machines
+    for p in pairs(idx.prompt) do
+        if p:IsDescendantOf(workspace) and hasAny(textOf(p), PLACE_AREA_WORDS) then
+            local pp = promptPos(p)
+            if pp and (pp - pos).Magnitude <= CFG.MachineClear then
+                return true
+            end
+        end
+    end
+    
+    -- Check ancestor chain for place-related words
+    local chain = chainOf(obj)
+    if hasAny(chain, PLACE_AREA_WORDS) then
+        return true
+    end
+    
+    -- Check if object is inside a place area (using position)
+    local root = getRoot()
+    if root then
+        local rp = root.Position
+        -- Check if there's a place area near this position
+        for p in pairs(idx.prompt) do
+            if p:IsDescendantOf(workspace) and hasAny(textOf(p), PLACE_AREA_WORDS) then
+                local pp = promptPos(p)
+                if pp and (pp - pos).Magnitude <= 50 then
+                    return true
+                end
+            end
+        end
+    end
+    
+    return false
+end
+
+local function isInSpawnArea(obj)
+    -- Check if egg is near the player's spawn position or safe zone
+    local part = partOf(obj)
+    if not part then
+        return false
+    end
+    
+    local pos = part.Position
+    local spawnPos = zone or (getRoot() and getRoot().Position)
+    
+    if spawnPos then
+        -- Check if egg is within a reasonable distance from spawn
+        if (pos - spawnPos).Magnitude <= CFG.DetectionRadius then
+            -- Check if NOT in a place area
+            if not isInPlaceArea(obj) then
+                return true
+            end
+        end
+    end
+    
+    return false
+end
+
 local function eggPromptOf(model)
-    -- First check if model has its own prompt
     local own = model:FindFirstChildWhichIsA("ProximityPrompt", true)
     if own and not hasAny(textOf(own), BAD_PROMPT) then
         return own
@@ -465,7 +521,6 @@ local function eggPromptOf(model)
         return nil
     end
     
-    -- Find nearest prompt to the egg
     local best, bestD
     for p in pairs(idx.prompt) do
         if p:IsDescendantOf(workspace) and p.Enabled and not hasAny(textOf(p), BAD_PROMPT) and not hasAny(chainOf(p), BAD_CHAIN) then
@@ -576,7 +631,7 @@ local function backToSafe()
     end
 end
 
--- ===== IMPROVED pickEgg with detection radius =====
+-- ===== IMPROVED pickEgg with Place Area Filter =====
 local function pickEgg()
     local r = getRoot()
     if not r then
@@ -586,6 +641,7 @@ local function pickEgg()
     local now = os.clock()
     local best
     local eggCount = 0
+    local spawnEggCount = 0
     local detectionRadius = CFG.DetectionRadius
     
     for obj in pairs(idx.egg) do
@@ -605,11 +661,10 @@ local function pickEgg()
                         -- Check ancestor chain
                         local chain = chainOf(obj)
                         if not hasAny(chain, BAD_ANCESTOR) then
-                            -- Check machine proximity (but don't skip if it's the only option)
-                            local nearMach = nearMachine(part.Position)
-                            
-                            -- Only skip if near machine AND there are other options
-                            if not nearMach or not best then
+                            -- CRITICAL: Skip eggs in Place Area
+                            if not isInPlaceArea(obj) then
+                                spawnEggCount = spawnEggCount + 1
+                                
                                 local cand = {model = obj, part = part, info = info, dist = dist}
                                 
                                 if not best then
@@ -632,9 +687,13 @@ local function pickEgg()
     -- Update detected egg count
     S.detectedEggs = eggCount
     
-    -- Update status with detection info
+    -- Update status
     if eggCount > 0 and not best then
-        S.status = string.format("Ditemukan %d egg, tapi tidak ada yang cocok dengan filter", eggCount)
+        if spawnEggCount > 0 then
+            S.status = string.format("%d egg valid di area spawn, tapi tidak cocok dengan filter", spawnEggCount)
+        else
+            S.status = string.format("%d egg terdeteksi, tapi semuanya di area Place", eggCount)
+        end
     elseif eggCount == 0 then
         S.status = "Tidak ada egg terdeteksi dalam radius " .. detectionRadius
     end
@@ -907,7 +966,6 @@ local function collectVisuals()
         if info and part and selOn(espSel, info.key) and not hasAny(chainOf(obj), BAD_ANCESTOR) then
             local dist = (part.Position - rp).Magnitude
             
-            -- Check ESP radius
             if dist <= espRadius then
                 local d = math.floor(dist)
                 
@@ -1093,7 +1151,7 @@ local function lowSet(on)
         S.status = "Low Graphics aktif"
     else
         lowRestore()
-        S.status = "Low Graphics mati, efek dikembalikan"
+        S.status = "Low Graphics mati"
     end
 end
 
@@ -1511,7 +1569,6 @@ local function createLogo(parent, size)
     }, parent)
     corner(logoFrame, size * 0.3)
     
-    -- Gradient effect
     local gradient = make("UIGradient", {
         Color = ColorSequence.new({
             ColorSequenceKeypoint.new(0, C.HotPink),
@@ -1521,7 +1578,6 @@ local function createLogo(parent, size)
         Rotation = 45,
     }, logoFrame)
     
-    -- Glossy effect
     local gloss = make("Frame", {
         Size = UDim2.new(1, 0, 0.5, 0),
         BackgroundColor3 = Color3.fromRGB(255, 255, 255),
@@ -1530,7 +1586,6 @@ local function createLogo(parent, size)
     }, logoFrame)
     corner(gloss, size * 0.3)
     
-    -- KH Monogram
     local khText = make("TextLabel", {
         Size = UDim2.new(1, 0, 1, 0),
         BackgroundTransparency = 1,
@@ -1542,27 +1597,22 @@ local function createLogo(parent, size)
         TextStrokeColor3 = C.HotPink,
     }, logoFrame)
     
-    -- Glow effect
     local glow = make("UIStroke", {
         Color = C.Accent,
         Thickness = 2,
         Transparency = 0.3,
     }, logoFrame)
     
-    -- Animation loop
     task.spawn(function()
         local t = 0
         while logoFrame.Parent do
             t += 0.05
             
-            -- Pulse effect
             local scale = 1 + math.sin(t * 2) * 0.05
             logoFrame.Size = UDim2.fromOffset(size * scale, size * scale)
             
-            -- Glow pulse
             glow.Transparency = 0.3 + math.sin(t * 3) * 0.2
             
-            -- Shine effect
             gloss.BackgroundTransparency = 0.7 + math.sin(t * 4) * 0.3
             
             task.wait(0.05)
@@ -1609,7 +1659,6 @@ local function showWelcomePopup()
     corner(popup, 16)
     make("UIStroke", {Color = C.PinkBorder, Transparency = 0.5, Thickness = 2}, popup)
     
-    -- Close button (X)
     local closeBtn = make("TextButton", {
         Size = UDim2.fromOffset(30, 30),
         Position = UDim2.new(1, -35, 0, 10),
@@ -1627,11 +1676,9 @@ local function showWelcomePopup()
         popupGui:Destroy()
     end)
     
-    -- Logo
     local logo = createLogo(popup, 80)
     logo.Position = UDim2.new(0.5, -40, 0, 30)
     
-    -- Title
     make("TextLabel", {
         Size = UDim2.new(1, -40, 0, 40),
         Position = UDim2.new(0, 20, 0, 120),
@@ -1643,19 +1690,17 @@ local function showWelcomePopup()
         TextScaled = true,
     }, popup)
     
-    -- Description
     make("TextLabel", {
         Size = UDim2.new(1, -40, 0, 80),
         Position = UDim2.new(0, 20, 0, 170),
         BackgroundTransparency = 1,
-        Text = "v2.1 Dark Pink Premium Edition\nSistem deteksi Egg yang lebih akurat\nUI premium dengan logo KH eksklusif",
+        Text = "v2.2 Dark Pink Premium Edition\nAuto Steal lebih pintar\nUI lebih clean & modern",
         TextColor3 = C.Muted,
         Font = Enum.Font.Gotham,
         TextSize = 14,
         TextWrapped = true,
     }, popup)
     
-    -- WhatsApp button
     local waBtn = btn(popup, "Join WhatsApp", C.AccentDark, 40)
     waBtn.Position = UDim2.new(0.5, -170, 0, 280)
     waBtn.Size = UDim2.fromOffset(340, 40)
@@ -1666,7 +1711,6 @@ local function showWelcomePopup()
         notify("Link WhatsApp disalin")
     end)
     
-    -- Discord button
     local dcBtn = btn(popup, "Join Discord", C.Row, 40)
     dcBtn.Position = UDim2.new(0.5, -170, 0, 330)
     dcBtn.Size = UDim2.fromOffset(340, 40)
@@ -1677,12 +1721,11 @@ local function showWelcomePopup()
         notify("Link Discord disalin")
     end)
     
-    -- Footer text
     make("TextLabel", {
         Size = UDim2.new(1, -40, 0, 30),
         Position = UDim2.new(0, 20, 0, 390),
         BackgroundTransparency = 1,
-        Text = "kayeshiHUB v2.1",
+        Text = "kayeshiHUB v2.2",
         TextColor3 = C.Muted,
         Font = Enum.Font.Gotham,
         TextSize = 12,
@@ -1718,7 +1761,6 @@ local function buildUI()
     local header = make("Frame", {Size = UDim2.new(1, 0, 0, 52), BackgroundColor3 = C.Side, BorderSizePixel = 0}, main)
     corner(header, 16)
     
-    -- Logo in header
     local headerLogo = createLogo(header, 36)
     headerLogo.Position = UDim2.new(0, 12, 0.5, -18)
     
@@ -1798,7 +1840,7 @@ local function buildUI()
     
     -- ===== MAIN TAB =====
     section(mp, "Auto Steal")
-    note(mp, "Steal egg terpilih di seluruh map. Tekan F untuk nyala/mati.")
+    note(mp, "Steal egg terpilih. Tekan F untuk nyala/mati.")
     
     switch(mp, "Auto Steal", "AutoSteal")
     switch(mp, "Rarity tertinggi dulu", "RarityFirst")
@@ -1917,10 +1959,9 @@ local function buildUI()
     end)
     
     -- ===== FILTER EGG TAB =====
-    section(ep, "Filter Egg untuk Steal")
-    note(ep, "Egg yang tidak dicentang tidak akan di-steal.")
+    section(ep, "Filter Egg")
+    note(ep, "Egg yang tidak dicentang tidak di-steal.")
     
-    -- Search bar
     local searchFrame = make("Frame", {
         Size = UDim2.new(1, 0, 0, 36), BackgroundColor3 = C.Card, BorderSizePixel = 0, LayoutOrder = nextOrder(),
     }, ep)
@@ -1941,16 +1982,13 @@ local function buildUI()
         refresh()
     end)
     
-    -- Filtered egg list
     local function createFilteredEggList()
-        -- Clear existing filtered eggs
         for _, child in ipairs(ep:GetChildren()) do
             if child:GetAttribute("FilteredEgg") then
                 child:Destroy()
             end
         end
         
-        -- Add filtered eggs
         for _, e in ipairs(EGG_LIST) do
             if eggSearchQuery == "" or string.find(string.lower(e[1]), eggSearchQuery, 1, true) then
                 local row = make("Frame", {
@@ -1986,7 +2024,6 @@ local function buildUI()
         end
     end
     
-    -- Buttons
     local btnFrame = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, LayoutOrder = nextOrder()}, ep)
     local allBtn = btn(btnFrame, "Pilih Semua", C.AccentDark, 34)
     allBtn.Size = UDim2.new(0.5, -4, 1, 0)
@@ -2011,7 +2048,6 @@ local function buildUI()
         refresh()
     end)
     
-    -- Min Rank button
     local minFrame = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, LayoutOrder = nextOrder()}, ep)
     local minBtn = btn(minFrame, "", C.Row, 34)
     minBtn.Size = UDim2.new(1, 0, 1, 0)
@@ -2027,12 +2063,11 @@ local function buildUI()
         minBtn.Text = "Min Rank: " .. MIN_STEPS[minIdx][1]
     end)
     
-    -- Initial filtered list
     createFilteredEggList()
     
     -- ===== AUTO TAB =====
     section(ap, "Auto Inventory")
-    note(ap, "Saat egg di tangan, script menekan Put To Inventory.")
+    note(ap, "Saat egg di tangan, tekan Put To Inventory.")
     switch(ap, "Auto Inventory", "AutoInv")
     stepper(ap, "Cooldown (detik)", "InvCd", 0.5, 0.5, 10)
     stepper(ap, "Gagal sebelum pindah", "InvTries", 1, 1, 10)
@@ -2044,17 +2079,17 @@ local function buildUI()
     stepper(ap, "Cooldown place (detik)", "MachineCd", 0.5, 0.5, 10)
     
     section(ap, "Auto Hatch")
-    note(ap, "Saat tidak memegang egg, teleport ke mesin hatch.")
+    note(ap, "Saat tidak memegang egg, ke mesin hatch.")
     switch(ap, "Auto Hatch", "AutoHatch")
     stepper(ap, "Cooldown hatch (detik)", "HatchCd", 0.5, 0.5, 30)
     
     -- ===== ESP TAB =====
     section(esp, "Egg ESP")
-    note(esp, "Menandai egg dengan nama dan jarak.")
+    note(esp, "Tandai egg dengan nama dan jarak.")
     switch(esp, "Egg ESP", "EggESP")
     
     section(esp, "X-Ray")
-    note(esp, "Menampilkan luck egg di air.")
+    note(esp, "Tampilkan luck egg di air.")
     switch(esp, "X-Ray Egg", "XRay")
     
     section(esp, "Filter ESP")
@@ -2062,7 +2097,7 @@ local function buildUI()
     
     -- ===== GRAFIK TAB =====
     section(gp, "Low Graphics")
-    note(gp, "Optimasi grafis untuk performa lebih baik.")
+    note(gp, "Optimasi grafis untuk performa.")
     switch(gp, "Low Graphics", "LowGraphics", function(on)
         lowSet(on)
     end)
@@ -2090,7 +2125,7 @@ local function buildUI()
     
     -- ===== KOMUNITAS TAB =====
     section(dp, "Discord")
-    note(dp, "Info, update script, dan saran fitur.")
+    note(dp, "Info, update, dan saran fitur.")
     
     local discordCopy = btn(dp, "Salin link Discord", C.AccentDark, 36)
     discordCopy.LayoutOrder = nextOrder()
@@ -2102,7 +2137,7 @@ local function buildUI()
     note(dp, DISCORD)
     
     section(dp, "WhatsApp")
-    note(dp, "Saluran WhatsApp untuk update terbaru.")
+    note(dp, "Saluran update terbaru.")
     
     local waCopy = btn(dp, "Salin link WhatsApp", C.AccentDark, 36)
     waCopy.LayoutOrder = nextOrder()
@@ -2128,7 +2163,6 @@ local function buildUI()
     corner(logo, 26)
     make("UIStroke", {Color = C.Accent, Thickness = 2}, logo)
     
-    -- Create logo inside button
     local logoInner = createLogo(logo, 44)
     logoInner.Position = UDim2.new(0.5, -22, 0.5, -22)
     
@@ -2137,6 +2171,14 @@ local function buildUI()
     local function setMenu(open)
         main.Visible = open
         logo.Visible = not open
+        if open then
+            -- Ensure logo is behind main when opening
+            logo.ZIndex = 1
+            main.ZIndex = 10
+        else
+            -- Ensure logo is on top when menu is hidden
+            logo.ZIndex = 999
+        end
         applyLayout()
     end
     uiRefs.setMenu = setMenu
@@ -2298,4 +2340,4 @@ loop("autosave", 3, function()
 end)
 loop("ui", 0.4, refresh)
 
-notify("kayeshiHUB v2.1 aktif. K = menu, F = auto steal.")
+notify("kayeshiHUB v2.2 aktif. K = menu, F = auto steal.")
