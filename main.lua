@@ -1,4 +1,4 @@
--- kayeshiHUB v2.3 - Dark Pink Premium Edition (FIXED & ENHANCED)
+-- kayeshiHUB v2.4 - Dark Pink Premium Edition (FIXED & ENHANCED)
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local StarterGui = game:GetService("StarterGui")
@@ -21,7 +21,7 @@ local function notify(text)
     end)
 end
 
-notify("kayeshiHUB v2.3 memuat...")
+notify("kayeshiHUB v2.4 memuat...")
 
 -- ===== THEME DARK PINK =====
 local C = {
@@ -92,10 +92,10 @@ local MIN_STEPS = {
 }
 
 -- ===== KONSTANTA DETEKSI =====
-local BAD_NAME = {"hatch", "place", "plant", "incubat", "inventor", "shop", "machine", "npc", "sell", "buy", "tukar"}
-local BAD_ANCESTOR = {"hatch", "place", "plant", "incubat", "machine", "shop", "npc", "display", "showcase", "inventory", "mudagen", "mudargen", "reward"}
-local BAD_PROMPT = {"inventory", "place", "plant", "incubat", "hatch", "shop", "buy", "sell", "tukar"}
-local BAD_CHAIN = {"generator", "shop", "npc", "citadel", "merchant", "tukar", "swap", "event", "halloween", "pumpkins"}
+local BAD_NAME = {"hatch", "place", "plant", "incubat", "inventor", "shop", "machine", "npc", "sell", "buy", "tukar", "display", "showcase"}
+local BAD_ANCESTOR = {"hatch", "place", "plant", "incubat", "machine", "shop", "npc", "display", "showcase", "inventory", "mudagen", "mudargen", "reward", "decorat", "furniture"}
+local BAD_PROMPT = {"inventory", "place", "plant", "incubat", "hatch", "shop", "buy", "sell", "tukar", "display", "showcase"}
+local BAD_CHAIN = {"generator", "shop", "npc", "citadel", "merchant", "tukar", "swap", "event", "halloween", "pumpkins", "decorat", "furniture"}
 
 -- ===== CONFIG =====
 local CFG = {
@@ -129,6 +129,7 @@ local nextInv = 0
 local invFails = 0
 local minIdx = 1
 local lastJson = ""
+local isStealing = false
 
 -- ===== UTILITY FUNCTIONS =====
 local function refresh()
@@ -214,7 +215,7 @@ local function chainOf(inst)
     return table.concat(names, " / ")
 end
 
--- ===== EGG DETECTION =====
+-- ===== IMPROVED EGG DETECTION =====
 local function eggOf(text)
     if not text then return nil end
     local l = string.lower(text or "")
@@ -278,32 +279,71 @@ local function clearVisuals()
     end
 end
 
-local function kindOf(obj)
-    if obj:IsA("ProximityPrompt") then
-        return "prompt"
-    end
+-- IMPROVED: Check if object is actually an egg (not a place/decoration)
+local function isRealEgg(obj)
     if not (obj:IsA("Model") or obj:IsA("BasePart")) then
-        return nil
+        return false
     end
     
     local n = string.lower(obj.Name)
     
+    -- Check if it's a trail shop
     if n == "trail shop" or n == "trailshop" or n == "trail" then
-        return "trail"
+        return false
     end
     
+    -- Check if name matches egg
     local eggInfo = eggOf(obj.Name)
-    if eggInfo then
-        if hasAny(n, BAD_NAME) then
-            return nil
+    if not eggInfo then
+        return false
+    end
+    
+    -- Check for bad names
+    if hasAny(n, BAD_NAME) then
+        return false
+    end
+    
+    -- Check parent chain
+    local chain = chainOf(obj)
+    if hasAny(chain, BAD_ANCESTOR) then
+        return false
+    end
+    
+    -- Check if it has a ProximityPrompt that's NOT for hatching/placing
+    local hasValidPrompt = false
+    local prompts = obj:GetDescendants()
+    for _, p in ipairs(prompts) do
+        if p:IsA("ProximityPrompt") then
+            local txt = textOf(p)
+            if not hasAny(txt, BAD_PROMPT) then
+                hasValidPrompt = true
+                break
+            end
         end
-        if obj.Parent and hasAny(string.lower(obj.Parent.Name), BAD_ANCESTOR) then
-            return nil
+    end
+    
+    -- If it has a valid prompt, it's likely an egg
+    if hasValidPrompt then
+        return true
+    end
+    
+    -- If it has no prompt but is a small model, might still be an egg
+    if obj:IsA("Model") then
+        local size = obj:GetExtentsSize()
+        if size.Magnitude < 20 then
+            return true
         end
-        local chain = chainOf(obj)
-        if hasAny(chain, BAD_ANCESTOR) then
-            return nil
-        end
+    end
+    
+    return false
+end
+
+local function kindOf(obj)
+    if obj:IsA("ProximityPrompt") then
+        return "prompt"
+    end
+    
+    if isRealEgg(obj) then
         return "egg"
     end
     
@@ -348,7 +388,9 @@ local function nearestPrompt(pos, pred)
     return best, bestD
 end
 
+-- IMPROVED: Find prompt that belongs to the specific egg model
 local function eggPromptOf(model)
+    -- First check for prompt directly in the model
     local own = model:FindFirstChildWhichIsA("ProximityPrompt", true)
     if own and not hasAny(textOf(own), BAD_PROMPT) then
         return own
@@ -359,13 +401,15 @@ local function eggPromptOf(model)
         return nil
     end
     
+    -- Check nearby prompts that are close to this egg
     local best, bestD
     for p in pairs(idx.prompt) do
         if p:IsDescendantOf(workspace) and p.Enabled and not hasAny(textOf(p), BAD_PROMPT) and not hasAny(chainOf(p), BAD_CHAIN) then
             local pp = promptPos(p)
             if pp then
                 local d = (pp - part.Position).Magnitude
-                if d <= 15 and (not bestD or d < bestD) then
+                -- Only accept prompts very close to the egg
+                if d <= 8 and (not bestD or d < bestD) then
                     best, bestD = p, d
                 end
             end
@@ -469,7 +513,7 @@ local function backToSafe()
     end
 end
 
--- ===== PICK EGG =====
+-- ===== IMPROVED PICK EGG =====
 local function pickEgg()
     local r = getRoot()
     if not r then
@@ -486,7 +530,7 @@ local function pickEgg()
             local info = eggOf(obj.Name)
             local part = partOf(obj)
             
-            if info and part then
+            if info and part and isRealEgg(obj) then
                 local dist = (part.Position - r.Position).Magnitude
                 
                 if dist <= detectionRadius then
@@ -524,17 +568,26 @@ local function pickEgg()
     return best
 end
 
--- ===== STEAL =====
+-- ===== IMPROVED STEAL =====
 local function steal(e)
+    if isStealing then
+        return false
+    end
+    
+    isStealing = true
+    local success = false
+    
     local before = totalEggs()
-    for _ = 1, 2 do
+    for attempt = 1, 2 do
         if not CFG.AutoSteal or not e.model:IsDescendantOf(workspace) then
             break
         end
+        
         streamAround(e.part.Position)
         tpTo(e.part.Position)
         task.wait(0.15)
         
+        -- Find the correct prompt for this specific egg
         local p
         local t0 = os.clock()
         repeat
@@ -550,16 +603,21 @@ local function steal(e)
         end
         touchPart(e.part)
         
+        -- Check if egg was actually obtained
         if waitFor(function()
             return not e.model:IsDescendantOf(workspace) or totalEggs() > before
         end, CFG.StealWait) then
-            backToSafe()
-            return true
+            if totalEggs() > before then
+                success = true
+                break
+            end
         end
         task.wait(0.2)
     end
+    
     backToSafe()
-    return false
+    isStealing = false
+    return success
 end
 
 -- ===== PROMPT INTERACTIONS =====
@@ -668,6 +726,10 @@ local function mainTick()
         return
     end
     
+    if isStealing then
+        return
+    end
+    
     local target = pickEgg()
     if not target then
         return
@@ -687,7 +749,7 @@ local function mainTick()
     end
 end
 
--- ===== VISUAL =====
+-- ===== IMPROVED VISUAL =====
 local function isWater(pos)
     local ok, res = pcall(function()
         local region = Region3.new(pos - Vector3.new(3, 3, 3), pos + Vector3.new(3, 3, 3)):ExpandToGrid(4)
@@ -722,7 +784,7 @@ local function collectVisuals()
         local info = eggOf(obj.Name)
         local part = obj:IsDescendantOf(workspace) and not (ch and obj:IsDescendantOf(ch)) and partOf(obj)
         
-        if info and part and selOn(espSel, info.key) and not hasAny(chainOf(obj), BAD_ANCESTOR) then
+        if info and part and isRealEgg(obj) and selOn(espSel, info.key) and not hasAny(chainOf(obj), BAD_ANCESTOR) then
             local dist = (part.Position - rp).Magnitude
             
             if dist <= espRadius then
@@ -1182,8 +1244,8 @@ local function eggRow(page, sel, e)
     end)
 end
 
--- ===== LOGO KH =====
-local function createLogo(parent, size)
+-- ===== PREMIUM LOGO KH =====
+local function createLogo(parent, size, isButton)
     local logoFrame = make("Frame", {
         Size = UDim2.fromOffset(size, size),
         BackgroundColor3 = C.AccentDark,
@@ -1191,15 +1253,25 @@ local function createLogo(parent, size)
     }, parent)
     corner(logoFrame, size * 0.3)
     
-    make("UIGradient", {
+    -- Premium gradient
+    local gradient = make("UIGradient", {
         Color = ColorSequence.new({
             ColorSequenceKeypoint.new(0, C.HotPink),
-            ColorSequenceKeypoint.new(0.5, C.Accent),
+            ColorSequenceKeypoint.new(0.3, C.Accent),
+            ColorSequenceKeypoint.new(0.7, Color3.fromRGB(255, 50, 150)),
             ColorSequenceKeypoint.new(1, C.AccentDark)
         }),
         Rotation = 45,
     }, logoFrame)
     
+    -- Glow effect
+    local glow = make("UIStroke", {
+        Color = C.Accent,
+        Thickness = 3,
+        Transparency = 0.2,
+    }, logoFrame)
+    
+    -- KH Text
     local khText = make("TextLabel", {
         Size = UDim2.new(1, 0, 1, 0),
         BackgroundTransparency = 1,
@@ -1213,9 +1285,28 @@ local function createLogo(parent, size)
         TextScaled = true,
     }, logoFrame)
     
-    make("UIStroke", {Color = C.Accent, Thickness = 2, Transparency = 0.3}, logoFrame)
+    -- Inner glow
+    local innerGlow = make("UIStroke", {
+        Color = C.PinkBorder,
+        Thickness = 1,
+        Transparency = 0.5,
+    }, khText)
     
-    return logoFrame
+    -- Pulse animation
+    local pulseTween = nil
+    local function startPulse()
+        if pulseTween then
+            pulseTween:Cancel()
+        end
+        pulseTween = TweenService:Create(logoFrame, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+            Size = UDim2.fromOffset(size * 1.05, size * 1.05)
+        })
+        pulseTween:Play()
+    end
+    
+    startPulse()
+    
+    return logoFrame, startPulse
 end
 
 -- ===== VIEWPORT & LAYOUT =====
@@ -1329,7 +1420,7 @@ local function buildUI()
     local header = make("Frame", {Size = UDim2.new(1, 0, 0, 52), BackgroundColor3 = C.Side, BorderSizePixel = 0}, main)
     corner(header, 16)
     
-    local headerLogo = createLogo(header, 36)
+    local headerLogo, _ = createLogo(header, 36)
     headerLogo.Position = UDim2.new(0, 12, 0.5, -18)
     
     make("TextLabel", {
@@ -1344,11 +1435,11 @@ local function buildUI()
         TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
     }, header)
     
-    local minBtn = btn(header, "Sembunyi", C.AccentDark, 28)
-    minBtn.Size = UDim2.fromOffset(88, 28)
-    minBtn.Position = UDim2.new(1, -98, 0, 12)
-    minBtn.TextSize = 11
-    minBtn.TextColor3 = C.Text
+    local hideBtn = btn(header, "Hide", C.AccentDark, 28)
+    hideBtn.Size = UDim2.fromOffset(60, 28)
+    hideBtn.Position = UDim2.new(1, -70, 0, 12)
+    hideBtn.TextSize = 11
+    hideBtn.TextColor3 = C.Text
     
     -- Sidebar
     local side = make("Frame", {
@@ -1709,23 +1800,33 @@ local function buildUI()
         statusLbl.Text = string.format("%s | Egg: %d | Config: %s", S.status, S.detectedEggs, S.config)
     end)
     
-    -- Logo button (minimized)
-    local logo = make("TextButton", {
-        AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(52, 52),
+    -- ===== PREMIUM LOGO BUTTON (Minimized) =====
+    local logoBtn = make("TextButton", {
+        AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(56, 56),
         BackgroundColor3 = C.Ink, BorderSizePixel = 0, AutoButtonColor = false, Visible = false,
-        Text = "", TextColor3 = C.Text, Font = Enum.Font.GothamBold, TextSize = 22, ZIndex = 5,
+        Text = "", ZIndex = 5,
     }, gui)
-    corner(logo, 26)
-    make("UIStroke", {Color = C.Accent, Thickness = 2}, logo)
+    corner(logoBtn, 28)
     
-    local logoInner = createLogo(logo, 44)
-    logoInner.Position = UDim2.new(0.5, -22, 0.5, -22)
+    -- Premium logo with glow
+    local logoFrame, startPulse = createLogo(logoBtn, 48)
+    logoFrame.Position = UDim2.new(0.5, -24, 0.5, -24)
     
-    uiRefs.logo = logo
+    -- Glow effect for button
+    local logoGlow = make("UIStroke", {
+        Color = C.Accent,
+        Thickness = 3,
+        Transparency = 0.1,
+    }, logoBtn)
+    
+    uiRefs.logo = logoBtn
     
     local function setMenu(open)
         main.Visible = open
-        logo.Visible = not open
+        logoBtn.Visible = not open
+        if not open then
+            startPulse()
+        end
         applyLayout()
     end
     uiRefs.setMenu = setMenu
@@ -1746,11 +1847,11 @@ local function buildUI()
             setPage(key)
         end)
     end
-    minBtn.MouseButton1Click:Connect(function()
+    hideBtn.MouseButton1Click:Connect(function()
         setMenu(false)
     end)
     
-    drag(logo,
+    drag(logoBtn,
         function() return layout.logo end,
         function(x, y)
             layout.logo = Vector2.new(x, y)
@@ -1776,7 +1877,7 @@ local function buildUI()
     
     -- Show menu by default
     main.Visible = true
-    logo.Visible = false
+    logoBtn.Visible = false
 end
 
 -- ===== INITIALIZATION =====
@@ -1887,4 +1988,4 @@ loop("autosave", 3, function()
 end)
 loop("ui", 0.4, refresh)
 
-notify("kayeshiHUB v2.3 aktif. K = menu, F = auto steal.")
+notify("kayeshiHUB v2.4 aktif. K = menu, F = auto steal.")p
