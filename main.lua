@@ -1,4 +1,4 @@
--- kayeshiHUB v2.2 - YATIM LO KONTOL
+-- kayeshiHUB v2.2 - FUCK, YATIM LU ANJG
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local StarterGui = game:GetService("StarterGui")
@@ -469,19 +469,10 @@ local function isInPlaceArea(obj)
         return true
     end
     
-    -- Check if object is inside a place area (using position)
-    local root = getRoot()
-    if root then
-        local rp = root.Position
-        -- Check if there's a place area near this position
-        for p in pairs(idx.prompt) do
-            if p:IsDescendantOf(workspace) and hasAny(textOf(p), PLACE_AREA_WORDS) then
-                local pp = promptPos(p)
-                if pp and (pp - pos).Magnitude <= 50 then
-                    return true
-                end
-            end
-        end
+    -- Additional check: Check if object name contains place-related words
+    local n = string.lower(obj.Name)
+    if hasAny(n, PLACE_AREA_WORDS) then
+        return true
     end
     
     return false
@@ -2154,30 +2145,35 @@ local function buildUI()
         statusLbl.Text = string.format("%s | Egg: %d | Config: %s", S.status, S.detectedEggs, S.config)
     end)
     
-    -- Logo button (minimized)
+    -- ===== FIXED LOGO BUTTON =====
     local logo = make("TextButton", {
         AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(52, 52),
         BackgroundColor3 = C.Ink, BorderSizePixel = 0, AutoButtonColor = false, Visible = false,
-        Text = "", TextColor3 = C.Text, Font = Enum.Font.GothamBold, TextSize = 22, ZIndex = 5,
+        Text = "", ZIndex = 999,  -- High ZIndex to ensure it's on top
     }, gui)
     corner(logo, 26)
     make("UIStroke", {Color = C.Accent, Thickness = 2}, logo)
     
+    -- Create logo inside button (but make it not block clicks)
     local logoInner = createLogo(logo, 44)
     logoInner.Position = UDim2.new(0.5, -22, 0.5, -22)
+    logoInner.ZIndex = 998  -- Below the button's click area
     
     uiRefs.logo = logo
     
+    -- FIXED setMenu function
     local function setMenu(open)
         main.Visible = open
         logo.Visible = not open
+        
         if open then
-            -- Ensure logo is behind main when opening
+            -- Menu is open, logo is hidden
             logo.ZIndex = 1
             main.ZIndex = 10
         else
-            -- Ensure logo is on top when menu is hidden
+            -- Menu is hidden, logo is visible and on top
             logo.ZIndex = 999
+            main.ZIndex = 1
         end
         applyLayout()
     end
@@ -2199,10 +2195,18 @@ local function buildUI()
             setPage(key)
         end)
     end
-    minBtn.MouseButton1Click:Connect(function()
+    
+    -- FIXED: Use Activated event for more reliable click detection
+    minBtn.Activated:Connect(function()
         setMenu(false)
     end)
     
+    -- FIXED: Logo click using Activated
+    logo.Activated:Connect(function()
+        setMenu(true)
+    end)
+    
+    -- FIXED: Drag for logo - use InputBegan/InputEnded properly
     drag(logo,
         function() return layout.logo end,
         function(x, y)
@@ -2250,6 +2254,7 @@ end
 task.wait(1)
 showWelcomePopup()
 
+-- FIXED: Input handling for shortcuts
 UIS.InputBegan:Connect(function(input, gameProcessed)
     lastActive = os.clock()
     if gameProcessed then
