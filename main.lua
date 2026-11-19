@@ -1,4 +1,4 @@
--- kayeshiHUB v2.2 - Dark Pink Premium Edition (FIXED)
+-- kayeshiHUB v2.3 - Dark Pink Premium Edition (FIXED & ENHANCED)
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local StarterGui = game:GetService("StarterGui")
@@ -21,7 +21,7 @@ local function notify(text)
     end)
 end
 
-notify("kayeshiHUB v2.2 memuat...")
+notify("kayeshiHUB v2.3 memuat...")
 
 -- ===== THEME DARK PINK =====
 local C = {
@@ -106,6 +106,8 @@ local CFG = {
     LowGraphics = false, Walk = false, WalkSpeed = 16, Jump = false, JumpPower = 50,
     AntiAFK = true, AfkIdle = 300, AutoSave = true,
     DetectionRadius = 500, ESPRadius = 500,
+    TeleportMode = "Tween", -- "Teleport" or "Tween"
+    TweenSpeed = 100,
 }
 local DEFAULT = {}
 for k, v in pairs(CFG) do
@@ -126,6 +128,7 @@ local baseWalk, baseJump = 16, 50
 local nextInv = 0
 local invFails = 0
 local minIdx = 1
+local lastJson = ""
 
 -- ===== UTILITY FUNCTIONS =====
 local function refresh()
@@ -144,31 +147,45 @@ local function humanoid()
     return ch and ch:FindFirstChildOfClass("Humanoid")
 end
 
--- FIXED TELEPORT - Safe teleport that doesn't go underground
-local function tpTo(pos)
+-- FIXED MOVEMENT - Teleport or Tween
+local function moveTo(pos)
     local ch = player.Character
     local r = ch and ch:FindFirstChild("HumanoidRootPart")
-    if r and pos then
-        -- Raycast to find ground
-        local ray = RaycastParams.new()
-        ray.FilterType = Enum.RaycastFilterType.Exclude
-        ray.FilterDescendantsInstances = {ch}
-        
-        local hit = workspace:Raycast(pos + Vector3.new(0, 50, 0), Vector3.new(0, -100, 0), ray)
-        local targetPos = pos
-        
-        if hit then
-            -- If there's ground below, position above it
-            targetPos = Vector3.new(pos.X, hit.Position.Y + 5, pos.Z)
-        else
-            -- No ground found, keep original position but add offset
-            targetPos = Vector3.new(pos.X, pos.Y + 3, pos.Z)
-        end
-        
-        -- Teleport with safe offset
+    if not r or not pos then return end
+    
+    -- Raycast to find ground
+    local ray = RaycastParams.new()
+    ray.FilterType = Enum.RaycastFilterType.Exclude
+    ray.FilterDescendantsInstances = {ch}
+    
+    local hit = workspace:Raycast(pos + Vector3.new(0, 50, 0), Vector3.new(0, -100, 0), ray)
+    local targetPos = pos
+    
+    if hit then
+        targetPos = Vector3.new(pos.X, hit.Position.Y + 5, pos.Z)
+    else
+        targetPos = Vector3.new(pos.X, pos.Y + 3, pos.Z)
+    end
+    
+    if CFG.TeleportMode == "Tween" then
+        -- Tween movement
+        local tweenInfo = TweenInfo.new(
+            (r.Position - targetPos).Magnitude / CFG.TweenSpeed,
+            Enum.EasingStyle.Linear,
+            Enum.EasingDirection.Out
+        )
+        local tween = TweenService:Create(ch, tweenInfo, {CFrame = CFrame.new(targetPos)})
+        tween:Play()
+        task.wait(tweenInfo.Time)
+    else
+        -- Instant teleport
         r.AssemblyLinearVelocity = Vector3.zero
         ch:PivotTo(CFrame.new(targetPos))
     end
+end
+
+local function tpTo(pos)
+    moveTo(pos)
 end
 
 local function streamAround(pos)
@@ -1366,7 +1383,7 @@ local function buildUI()
     -- Tabs
     local TABS = {
         {"main", "Utama"}, {"egg", "Filter Egg"}, {"auto", "Auto"},
-        {"esp", "ESP & X-Ray"}, {"grafik", "Grafik"}, {"discord", "Komunitas"},
+        {"esp", "ESP & X-Ray"}, {"gerak", "Gerak"}, {"grafik", "Grafik"}, {"discord", "Komunitas"},
     }
     
     local pages, tabs = {}, {}
@@ -1387,7 +1404,7 @@ local function buildUI()
         tabs[t[1]] = b
     end
     
-    local mp, ep, ap, esp, gp, dp = pages.main, pages.egg, pages.auto, pages.esp, pages.grafik, pages.discord
+    local mp, ep, ap, esp, gp, gerakp, dp = pages.main, pages.egg, pages.auto, pages.esp, pages.grafik, pages.gerak, pages.discord
     
     -- ===== MAIN TAB =====
     section(mp, "Auto Steal")
@@ -1446,25 +1463,11 @@ local function buildUI()
     
     switch(mp, "Safe zone dekat Trail Shop", "SafeTrail")
     
-    section(mp, "Anti AFK & Gerak")
+    section(mp, "Anti AFK")
     switch(mp, "Anti AFK", "AntiAFK", function()
         lastActive = os.clock()
     end)
     stepper(mp, "Lompat setelah diam (detik)", "AfkIdle", 30, 60, 900)
-    switch(mp, "WalkSpeed", "Walk", function(on)
-        local hum = humanoid()
-        if hum and not on then
-            hum.WalkSpeed = baseWalk
-        end
-    end)
-    stepper(mp, "Kecepatan jalan", "WalkSpeed", 5, 16, 250)
-    switch(mp, "JumpPower", "Jump", function(on)
-        local hum = humanoid()
-        if hum and not on then
-            hum.JumpPower = baseJump
-        end
-    end)
-    stepper(mp, "Kekuatan lompat", "JumpPower", 10, 50, 300)
     
     section(mp, "Config")
     switch(mp, "Auto Save", "AutoSave")
@@ -1560,6 +1563,57 @@ local function buildUI()
     switch(ap, "Auto Inventory", "AutoInv")
     stepper(ap, "Cooldown (detik)", "InvCd", 0.5, 0.5, 10)
     stepper(ap, "Gagal sebelum pindah", "InvTries", 1, 1, 10)
+    
+    -- ===== GERAK TAB =====
+    section(gerakp, "Mode Gerak")
+    note(gerakp, "Pilih cara bergerak ke egg.")
+    
+    local modeFrame = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1}, gerakp)
+    local tpModeBtn = btn(modeFrame, "Teleport", C.Row, 34)
+    tpModeBtn.Size = UDim2.new(0.5, -4, 1, 0)
+    tpModeBtn.TextColor3 = C.Muted
+    
+    local tweenModeBtn = btn(modeFrame, "Tween", C.Row, 34)
+    tweenModeBtn.Size = UDim2.new(0.5, -4, 1, 0)
+    tweenModeBtn.Position = UDim2.new(0.5, 4, 0, 0)
+    tweenModeBtn.TextColor3 = C.Muted
+    
+    table.insert(paints, function()
+        local isTween = CFG.TeleportMode == "Tween"
+        tpModeBtn.BackgroundColor3 = not isTween and C.AccentDark or C.Row
+        tpModeBtn.TextColor3 = not isTween and C.Text or C.Muted
+        tweenModeBtn.BackgroundColor3 = isTween and C.AccentDark or C.Row
+        tweenModeBtn.TextColor3 = isTween and C.Text or C.Muted
+    end)
+    
+    tpModeBtn.MouseButton1Click:Connect(function()
+        CFG.TeleportMode = "Teleport"
+        refresh()
+    end)
+    tweenModeBtn.MouseButton1Click:Connect(function()
+        CFG.TeleportMode = "Tween"
+        refresh()
+    end)
+    
+    stepper(gerakp, "Kecepatan Tween", "TweenSpeed", 10, 50, 500)
+    
+    section(gerakp, "WalkSpeed")
+    switch(gerakp, "WalkSpeed", "Walk", function(on)
+        local hum = humanoid()
+        if hum and not on then
+            hum.WalkSpeed = baseWalk
+        end
+    end)
+    stepper(gerakp, "Kecepatan jalan", "WalkSpeed", 5, 16, 250)
+    
+    section(gerakp, "JumpPower")
+    switch(gerakp, "JumpPower", "Jump", function(on)
+        local hum = humanoid()
+        if hum and not on then
+            hum.JumpPower = baseJump
+        end
+    end)
+    stepper(gerakp, "Kekuatan lompat", "JumpPower", 10, 50, 300)
     
     -- ===== ESP TAB =====
     section(esp, "Egg ESP")
@@ -1833,4 +1887,4 @@ loop("autosave", 3, function()
 end)
 loop("ui", 0.4, refresh)
 
-notify("kayeshiHUB v2.2 aktif. K = menu, F = auto steal.")
+notify("kayeshiHUB v2.3 aktif. K = menu, F = auto steal.")
