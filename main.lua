@@ -1,4 +1,4 @@
--- kayeshiHUB v2.1 - FUCK, YATIM LO BGST
+-- kayeshiHUB v2.1 - FUCK YOU NGA - BGST LU ANJG
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local StarterGui = game:GetService("StarterGui")
