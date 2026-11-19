@@ -1,4 +1,4 @@
--- kayeshiHUB v2.1 - FUCK YOU NGA - BGST LU ANJG
+-- kayeshiHUB v2.2 - Dark Pink Premium Edition (Fixed)
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local StarterGui = game:GetService("StarterGui")
@@ -21,7 +21,7 @@ local function notify(text)
     end)
 end
 
-notify("kayeshiHUB v2.1 memuat...")
+notify("kayeshiHUB v2.2 memuat...")
 
 -- ===== THEME DARK PINK =====
 local C = {
@@ -133,10 +133,10 @@ local MIN_STEPS = {
 }
 
 -- ===== KONSTANTA DETEKSI =====
-local BAD_NAME = {"hatch", "place", "plant", "incubat", "inventor", "shop", "machine", "npc", "sell", "buy", "tukar"}
-local BAD_ANCESTOR = {"hatch", "place", "plant", "incubat", "machine", "shop", "npc", "display", "showcase", "inventory", "mudagen", "mudargen", "reward"}
-local BAD_PROMPT = {"inventory", "place", "plant", "incubat", "hatch", "shop", "buy", "sell", "tukar"}
-local BAD_CHAIN = {"generator", "shop", "npc", "citadel", "merchant", "tukar", "swap", "event", "halloween", "pumpkins"}
+local BAD_NAME = {"hatch", "place", "plant", "incubat", "inventor", "shop", "machine", "npc", "sell", "buy", "tukar", "merchant", "vendor"}
+local BAD_ANCESTOR = {"hatch", "place", "plant", "incubat", "machine", "shop", "npc", "display", "showcase", "inventory", "mudagen", "mudargen", "reward", "merchant", "vendor", "shopkeeper", "trader"}
+local BAD_PROMPT = {"inventory", "place", "plant", "incubat", "hatch", "shop", "buy", "sell", "tukar", "merchant", "vendor"}
+local BAD_CHAIN = {"generator", "shop", "npc", "citadel", "merchant", "tukar", "swap", "event", "halloween", "pumpkins", "vendor", "shopkeeper", "trader"}
 local MACHINE_WORDS = {"place", "plant", "incubat", "hatch", "inventory"}
 local PLACE_AREA_WORDS = {"place", "plant", "incubat", "machine", "mesin", "incubator"}
 local LOW_OFF = {
@@ -149,12 +149,11 @@ local CFG = {
     AutoSteal = true, RarityFirst = false, MinRank = 0, StealWait = 1.2, IgnoreTime = 6,
     MachineClear = 25, ReturnRadius = 6, SafeTrail = true, SafeSide = 4,
     AutoInv = true, InvCd = 1.5, InvTries = 3,
-    AutoPlace = false, PlaceReturn = true, MachineCd = 2,
-    AutoHatch = false, HatchCd = 3,
     EggESP = false, XRay = false,
     LowGraphics = false, Walk = false, WalkSpeed = 16, Jump = false, JumpPower = 50,
     AntiAFK = true, AfkIdle = 300, AutoSave = true,
     DetectionRadius = 500, ESPRadius = 500,
+    StealMode = "Tween", -- "Tween" or "Teleport"
 }
 local DEFAULT = {}
 for k, v in pairs(CFG) do
@@ -166,7 +165,7 @@ local idx = {egg = {}, prompt = {}, trail = {}}
 local eggSel, espSel = {}, {}
 local visuals, ignored, cooldown, waterCache = {}, {}, {}, {}
 local machCache, machAt = {}, 0
-local S = {status = "Memuat...", steal = 0, inv = 0, place = 0, hatch = 0, errors = 0, config = "-", held = "-", low = 0, lowErr = 0, detectedEggs = 0}
+local S = {status = "Memuat...", steal = 0, inv = 0, errors = 0, config = "-", held = "-", low = 0, lowErr = 0, detectedEggs = 0}
 local zone
 local busy = false
 local paints, uiRefs = {}, {}
@@ -174,7 +173,7 @@ local layout = {main = Vector2.new(0, 0), logo = Vector2.new(0, 0), ready = fals
 local orderSeq = 0
 local lastActive = os.clock()
 local baseWalk, baseJump = 16, 50
-local nextInv, nextPlace, nextHatch = 0, 0, 0
+local nextInv = 0
 local invFails = 0
 local lastJson
 local minIdx = 1
@@ -209,6 +208,17 @@ local function tpTo(pos)
     if r then
         r.AssemblyLinearVelocity = Vector3.zero
         ch:PivotTo(CFrame.new(pos + Vector3.new(0, 3, 0)))
+    end
+end
+
+local function tweenTo(pos)
+    local ch = player.Character
+    local r = ch and ch:FindFirstChild("HumanoidRootPart")
+    if r then
+        local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut)
+        local tween = TweenService:Create(ch, tweenInfo, {CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))})
+        tween:Play()
+        task.wait(0.5)
     end
 end
 
@@ -335,41 +345,29 @@ local function kindOf(obj)
     -- Egg detection
     local eggInfo = eggOf(obj.Name)
     if eggInfo then
+        -- Skip if name contains bad words (NPC, shop, etc)
         if hasAny(n, BAD_NAME) then
-            if string.find(n, "egg", 1, true) and not hasAny(n, {"hatch", "incubat", "inventor"}) then
-                return "egg"
-            end
             return nil
         end
         
-        if obj:IsA("BasePart") and obj.Parent and eggOf(obj.Parent.Name) then
+        -- Skip if parent is bad
+        if obj.Parent and hasAny(string.lower(obj.Parent.Name), BAD_ANCESTOR) then
             return nil
         end
         
+        -- Check chain
         local chain = chainOf(obj)
         if hasAny(chain, BAD_ANCESTOR) then
-            if obj:IsA("Model") and eggInfo and not hasAny(chain, {"hatch", "incubat", "inventor"}) then
-                return "egg"
-            end
             return nil
         end
         
         return "egg"
     end
     
+    -- Check if name contains "egg" and matches known egg
     if string.find(n, "egg", 1, true) and not hasAny(n, BAD_NAME) then
         for _, eggData in pairs(EGG) do
             if eggData.name and string.find(n, string.lower(eggData.name):gsub(" ", ""), 1, true) then
-                return "egg"
-            end
-        end
-    end
-    
-    if obj:IsA("BasePart") and obj.Size.Y < 5 and obj.Size.X < 5 and obj.Size.Z < 5 then
-        local parent = obj.Parent
-        if parent and parent:IsA("Model") then
-            local parentName = string.lower(parent.Name)
-            if string.find(parentName, "egg", 1, true) then
                 return "egg"
             end
         end
@@ -457,7 +455,7 @@ local function isInPlaceArea(obj)
     for p in pairs(idx.prompt) do
         if p:IsDescendantOf(workspace) and hasAny(textOf(p), PLACE_AREA_WORDS) then
             local pp = promptPos(p)
-            if pp and (pp - pos).Magnitude <= 10 then -- Reduced from MachineClear to 10
+            if pp and (pp - pos).Magnitude <= 8 then -- Reduced to 8 for accuracy
                 return true
             end
         end
@@ -473,29 +471,6 @@ local function isInPlaceArea(obj)
     local n = string.lower(obj.Name)
     if hasAny(n, PLACE_AREA_WORDS) then
         return true
-    end
-    
-    return false
-end
-
-local function isInSpawnArea(obj)
-    -- Check if egg is near the player's spawn position or safe zone
-    local part = partOf(obj)
-    if not part then
-        return false
-    end
-    
-    local pos = part.Position
-    local spawnPos = zone or (getRoot() and getRoot().Position)
-    
-    if spawnPos then
-        -- Check if egg is within a reasonable distance from spawn
-        if (pos - spawnPos).Magnitude <= CFG.DetectionRadius then
-            -- Check if NOT in a place area
-            if not isInPlaceArea(obj) then
-                return true
-            end
-        end
     end
     
     return false
@@ -618,11 +593,15 @@ local function backToSafe()
     local p = safePos()
     local r = getRoot()
     if p and r and (r.Position - p).Magnitude > CFG.ReturnRadius then
-        tpTo(p)
+        if CFG.StealMode == "Tween" then
+            tweenTo(p)
+        else
+            tpTo(p)
+        end
     end
 end
 
--- ===== IMPROVED pickEgg with Fixed Place Area Filter =====
+-- ===== IMPROVED pickEgg =====
 local function pickEgg()
     local r = getRoot()
     if not r then
@@ -632,7 +611,7 @@ local function pickEgg()
     local now = os.clock()
     local best
     local eggCount = 0
-    local spawnEggCount = 0
+    local validEggCount = 0
     local detectionRadius = CFG.DetectionRadius
     
     for obj in pairs(idx.egg) do
@@ -649,12 +628,12 @@ local function pickEgg()
                     
                     -- Check if egg is selected in filter
                     if selOn(eggSel, info.key) and info.rank >= CFG.MinRank then
-                        -- Check ancestor chain
+                        -- Check ancestor chain - skip if in bad area
                         local chain = chainOf(obj)
                         if not hasAny(chain, BAD_ANCESTOR) then
-                            -- CRITICAL: Skip eggs in Place Area (but only if truly in place area)
+                            -- Skip if in place area (too close to machine)
                             if not isInPlaceArea(obj) then
-                                spawnEggCount = spawnEggCount + 1
+                                validEggCount = validEggCount + 1
                                 
                                 local cand = {model = obj, part = part, info = info, dist = dist}
                                 
@@ -680,10 +659,10 @@ local function pickEgg()
     
     -- Update status
     if eggCount > 0 and not best then
-        if spawnEggCount > 0 then
-            S.status = string.format("%d egg valid di area spawn, tapi tidak cocok dengan filter", spawnEggCount)
+        if validEggCount > 0 then
+            S.status = string.format("%d egg valid, tapi tidak cocok dengan filter", validEggCount)
         else
-            S.status = string.format("%d egg terdeteksi, tapi semuanya di area Place", eggCount)
+            S.status = string.format("%d egg terdeteksi, tapi semuanya di area Place/NPC", eggCount)
         end
     elseif eggCount == 0 then
         S.status = "Tidak ada egg terdeteksi dalam radius " .. detectionRadius
@@ -700,7 +679,13 @@ local function steal(e)
             break
         end
         streamAround(e.part.Position)
-        tpTo(e.part.Position)
+        
+        -- Move to egg based on mode
+        if CFG.StealMode == "Tween" then
+            tweenTo(e.part.Position)
+        else
+            tpTo(e.part.Position)
+        end
         task.wait(0.15)
         
         local p
@@ -759,7 +744,11 @@ local function useMachine(p)
     local pos = promptPos(p)
     if pos then
         streamAround(pos)
-        tpTo(pos)
+        if CFG.StealMode == "Tween" then
+            tweenTo(pos)
+        else
+            tpTo(pos)
+        end
     end
     task.wait(0.1)
     firePrompt(p)
@@ -785,52 +774,6 @@ local function putInventory()
     end
     S.status = "Egg belum masuk inventory, dicoba lagi"
     return false
-end
-
-local function placeEgg()
-    local p = ensurePrompt({"place", "plant", "incubat"})
-    if not p then
-        S.status = "Mesin place tidak ketemu"
-        return false
-    end
-    local beforeHand = #handEggs()
-    cooldown[p] = os.clock() + CFG.MachineCd
-    local pos = promptPos(p)
-    if pos then
-        streamAround(pos)
-        tpTo(pos)
-    end
-    task.wait(0.1)
-    firePrompt(p)
-    local ok = waitFor(function()
-        return #handEggs() < beforeHand
-    end, 1.5)
-    local safe = safePos()
-    if CFG.PlaceReturn and safe then
-        tpTo(safe)
-    else
-        backToSafe()
-    end
-    if ok then
-        S.place += 1
-        S.status = "Egg ditaruh ke mesin"
-        return true
-    end
-    S.status = "Place belum berhasil, dicoba lagi"
-    return false
-end
-
-local function hatchOnce()
-    local p = ensurePrompt({"hatch"})
-    if not p then
-        return false
-    end
-    cooldown[p] = os.clock() + CFG.HatchCd
-    useMachine(p)
-    backToSafe()
-    S.hatch += 1
-    S.status = "Hatch dijalankan"
-    return true
 end
 
 local function ensureInventoryStep()
@@ -873,25 +816,8 @@ local function mainTick()
             ensureInventoryStep()
             return
         end
-        if CFG.AutoPlace and os.clock() >= nextPlace then
-            nextPlace = os.clock() + CFG.MachineCd
-            busy = true
-            placeEgg()
-            busy = false
-            return
-        end
-        S.status = CFG.AutoPlace and "Egg di tangan, menunggu Auto Place" or "Egg di tangan. Nyalakan Auto Inventory atau Auto Place"
+        S.status = "Egg di tangan. Nyalakan Auto Inventory"
         return
-    end
-    
-    if CFG.AutoHatch and os.clock() >= nextHatch then
-        nextHatch = os.clock() + CFG.HatchCd
-        busy = true
-        local did = hatchOnce()
-        busy = false
-        if did then
-            return
-        end
     end
     
     if not CFG.AutoSteal then
@@ -1685,7 +1611,7 @@ local function showWelcomePopup()
         Size = UDim2.new(1, -40, 0, 80),
         Position = UDim2.new(0, 20, 0, 170),
         BackgroundTransparency = 1,
-        Text = "v2.1 Dark Pink Premium Edition\nAuto Steal lebih pintar\nUI lebih clean & modern",
+        Text = "v2.2 Dark Pink Premium Edition\nAuto Steal lebih pintar\nUI lebih clean & modern",
         TextColor3 = C.Muted,
         Font = Enum.Font.Gotham,
         TextSize = 14,
@@ -1716,7 +1642,7 @@ local function showWelcomePopup()
         Size = UDim2.new(1, -40, 0, 30),
         Position = UDim2.new(0, 20, 0, 390),
         BackgroundTransparency = 1,
-        Text = "kayeshiHUB v2.1",
+        Text = "kayeshiHUB v2.2",
         TextColor3 = C.Muted,
         Font = Enum.Font.Gotham,
         TextSize = 12,
@@ -1767,7 +1693,7 @@ local function buildUI()
         TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
     }, header)
     
-    -- FIXED: Change button text to "Hide"
+    -- Hide button
     local hideBtn = btn(header, "Hide", C.AccentDark, 28)
     hideBtn.Size = UDim2.fromOffset(88, 28)
     hideBtn.Position = UDim2.new(1, -98, 0, 12)
@@ -1837,7 +1763,39 @@ local function buildUI()
     switch(mp, "Auto Steal", "AutoSteal")
     switch(mp, "Rarity tertinggi dulu", "RarityFirst")
     stepper(mp, "Tunggu prompt (detik)", "StealWait", 0.1, 0.5, 3)
-    stepper(mp, "Jarak aman dari mesin", "MachineClear", 5, 5, 80)
+    
+    -- Steal Mode Selection
+    section(mp, "Mode Steal")
+    note(mp, "Pilih cara bergerak ke egg:")
+    
+    local modeFrame = make("Frame", {Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1, LayoutOrder = nextOrder()}, mp)
+    
+    local tweenBtn = btn(modeFrame, "Tween", C.AccentDark, 36)
+    tweenBtn.Size = UDim2.new(0.5, -4, 1, 0)
+    tweenBtn.TextColor3 = C.Text
+    
+    local teleportBtn = btn(modeFrame, "Teleport", C.Row, 36)
+    teleportBtn.Size = UDim2.new(0.5, -4, 1, 0)
+    teleportBtn.Position = UDim2.new(0.5, 4, 0, 0)
+    teleportBtn.TextColor3 = C.Muted
+    
+    tweenBtn.MouseButton1Click:Connect(function()
+        CFG.StealMode = "Tween"
+        refresh()
+    end)
+    
+    teleportBtn.MouseButton1Click:Connect(function()
+        CFG.StealMode = "Teleport"
+        refresh()
+    end)
+    
+    table.insert(paints, function()
+        local isTween = CFG.StealMode == "Tween"
+        tweenBtn.BackgroundColor3 = isTween and C.AccentDark or C.Row
+        tweenBtn.TextColor3 = isTween and C.Text or C.Muted
+        teleportBtn.BackgroundColor3 = not isTween and C.AccentDark or C.Row
+        teleportBtn.TextColor3 = not isTween and C.Text or C.Muted
+    end)
     
     section(mp, "Detection Radius")
     stepper(mp, "Radius deteksi egg", "DetectionRadius", 50, 100, 1000)
@@ -1878,7 +1836,11 @@ local function buildUI()
     tpBtn.MouseButton1Click:Connect(function()
         local p = safePos()
         if p then
-            tpTo(p)
+            if CFG.StealMode == "Tween" then
+                tweenTo(p)
+            else
+                tpTo(p)
+            end
             S.status = "Teleport ke safe zone"
         else
             S.status = "Safe zone belum di-set"
@@ -2064,17 +2026,6 @@ local function buildUI()
     stepper(ap, "Cooldown (detik)", "InvCd", 0.5, 0.5, 10)
     stepper(ap, "Gagal sebelum pindah", "InvTries", 1, 1, 10)
     
-    section(ap, "Auto Place")
-    note(ap, "Dipakai jika Auto Inventory mati.")
-    switch(ap, "Auto Place", "AutoPlace")
-    switch(ap, "Balik ke safe zone", "PlaceReturn")
-    stepper(ap, "Cooldown place (detik)", "MachineCd", 0.5, 0.5, 10)
-    
-    section(ap, "Auto Hatch")
-    note(ap, "Saat tidak memegang egg, ke mesin hatch.")
-    switch(ap, "Auto Hatch", "AutoHatch")
-    stepper(ap, "Cooldown hatch (detik)", "HatchCd", 0.5, 0.5, 30)
-    
     -- ===== ESP TAB =====
     section(esp, "Egg ESP")
     note(esp, "Tandai egg dengan nama dan jarak.")
@@ -2142,23 +2093,42 @@ local function buildUI()
     
     -- Status bar updates
     table.insert(paints, function()
-        subtitle.Text = string.format("Steal %d | Inv %d | Place %d | Hatch %d", S.steal, S.inv, S.place, S.hatch)
+        subtitle.Text = string.format("Steal %d | Inv %d | Mode: %s", S.steal, S.inv, CFG.StealMode)
         statusLbl.Text = string.format("%s | Egg: %d | Config: %s", S.status, S.detectedEggs, S.config)
     end)
     
     -- ===== FIXED LOGO BUTTON =====
+    -- Create logo button with proper ZIndex and visibility
     local logo = make("TextButton", {
-        AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(52, 52),
-        BackgroundColor3 = C.Ink, BorderSizePixel = 0, AutoButtonColor = false, Visible = false,
-        Text = "", ZIndex = 999,  -- High ZIndex to ensure it's on top
+        AnchorPoint = Vector2.new(0.5, 0.5), 
+        Size = UDim2.fromOffset(52, 52),
+        BackgroundColor3 = C.AccentDark,  -- Set background to accent color
+        BorderSizePixel = 0, 
+        AutoButtonColor = false, 
+        Visible = false,
+        Text = "", 
+        ZIndex = 999,
     }, gui)
     corner(logo, 26)
     make("UIStroke", {Color = C.Accent, Thickness = 2}, logo)
     
-    -- Create logo inside button (but make it not block clicks)
+    -- Create logo inside button with proper ZIndex
     local logoInner = createLogo(logo, 44)
     logoInner.Position = UDim2.new(0.5, -22, 0.5, -22)
-    logoInner.ZIndex = 998  -- Below the button's click area
+    logoInner.ZIndex = 998
+    
+    -- Add "KH" text directly to the button as fallback
+    local khText = make("TextLabel", {
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
+        Text = "KH",
+        TextColor3 = C.Text,
+        Font = Enum.Font.GothamBold,
+        TextSize = 20,
+        TextStrokeTransparency = 0,
+        TextStrokeColor3 = C.HotPink,
+        ZIndex = 1000,
+    }, logo)
     
     uiRefs.logo = logo
     
@@ -2346,4 +2316,4 @@ loop("autosave", 3, function()
 end)
 loop("ui", 0.4, refresh)
 
-notify("kayeshiHUB v2.1 aktif. K = menu, F = auto steal.")
+notify("kayeshiHUB v2.2 aktif. K = menu, F = auto steal.")
