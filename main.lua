@@ -44,7 +44,6 @@ local C = {
 
 -- ===== DATABASE EGG =====
 local EGG_LIST = {
-    -- Index 1
     {"Common Egg", "1"},
     {"Coral Egg", "20"},
     {"Reef Egg", "400"},
@@ -54,7 +53,6 @@ local EGG_LIST = {
     {"Trench Egg", "60M"},
     {"Sovereign Egg", "1B"},
     {"Celestial Egg", "20B"},
-    -- Index 2
     {"Eternal Egg", "70B"},
     {"Coral Reef Egg", "90B"},
     {"Glacial Spiral Egg", "115B"},
@@ -64,7 +62,6 @@ local EGG_LIST = {
     {"Spikey Egg", "Unknown"},
     {"Mamba Egg", "Unknown"},
     {"Inferno Egg", "Unknown"},
-    -- Index 3
     {"Prism Egg", "15T"},
     {"Astral Vortex", "5T"},
     {"Damumu Egg", "3.5T-6T"},
@@ -1439,7 +1436,7 @@ local function createLogo(parent, size)
     }, logoFrame)
     corner(gloss, size * 0.3)
     
-    -- KH Text
+    -- KH Text (FIXED: Ensure text is visible)
     local khText = make("TextLabel", {
         Size = UDim2.new(1, 0, 1, 0),
         BackgroundTransparency = 1,
@@ -1450,6 +1447,7 @@ local function createLogo(parent, size)
         TextStrokeTransparency = 0,
         TextStrokeColor3 = C.HotPink,
         ZIndex = 2,
+        TextScaled = true, -- FIXED: Add TextScaled for better fit
     }, logoFrame)
     
     -- Glow effect
@@ -2041,7 +2039,7 @@ local function buildUI()
         statusLbl.Text = string.format("%s | Egg: %d | Config: %s", S.status, S.detectedEggs, S.config)
     end)
     
-    -- ===== FIXED LOGO BUTTON (BAGUS) =====
+    -- ===== FIXED LOGO BUTTON =====
     local logo = make("TextButton", {
         AnchorPoint = Vector2.new(0.5, 0.5), 
         Size = UDim2.fromOffset(60, 60),
@@ -2055,7 +2053,7 @@ local function buildUI()
     corner(logo, 30)
     make("UIStroke", {Color = C.Accent, Thickness = 3}, logo)
     
-    -- Create logo with effects
+    -- Create logo with effects (FIXED: Make sure it's visible)
     local logoInner = createLogo(logo, 50)
     logoInner.Position = UDim2.new(0.5, -25, 0.5, -25)
     logoInner.ZIndex = 1000
@@ -2114,7 +2112,7 @@ local function buildUI()
         end)
     end
     
-    -- FIXED: Use Activated event
+    -- FIXED: Use Activated event for better compatibility
     hideBtn.Activated:Connect(function()
         setMenu(false)
     end)
@@ -2147,6 +2145,10 @@ local function buildUI()
     setPage("main")
     refresh()
     applyLayout()
+    
+    -- FIXED: Show menu by default
+    main.Visible = true
+    logo.Visible = false
 end
 
 -- ===== INITIALIZATION =====
