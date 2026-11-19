@@ -72,11 +72,50 @@ local EGG_LIST = {
     {"Golem Egg", "Unknown"},
 }
 
+-- Alias database untuk deteksi yang lebih akurat
+local EGG_ALIASES = {
+    ["common"] = "common egg",
+    ["coral"] = "coral egg",
+    ["reef"] = "reef egg",
+    ["tidal"] = "tidal egg",
+    ["deep"] = "deep egg",
+    ["abyss"] = "abyss egg",
+    ["trench"] = "trench egg",
+    ["sovereign"] = "sovereign egg",
+    ["celestial"] = "celestial egg",
+    ["eternal"] = "eternal egg",
+    ["coral reef"] = "coral reef egg",
+    ["glacial spiral"] = "glacial spiral egg",
+    ["amethyst spiral"] = "amethyst spiral egg",
+    ["azure crown"] = "azure crown egg",
+    ["solar orbit"] = "solar orbit egg",
+    ["spikey"] = "spikey egg",
+    ["mamba"] = "mamba egg",
+    ["inferno"] = "inferno egg",
+    ["prism"] = "prism egg",
+    ["astral vortex"] = "astral vortex",
+    ["damumu"] = "damumu egg",
+    ["eclipse"] = "eclipse egg",
+    ["admin abuse seraph"] = "admin abuse seraph egg",
+    ["kraken glory"] = "kraken glory egg",
+    ["kingkalolo"] = "kingkalolo egg",
+    ["king kolo"] = "kingkalolo egg",
+    ["golem"] = "golem egg",
+}
+
 local EGG, EGG_KEYS = {}, {}
 for i, e in ipairs(EGG_LIST) do
     local key = string.lower(e[1])
     EGG[key] = {name = e[1], luck = e[2], rank = i, key = key}
     table.insert(EGG_KEYS, key)
+end
+
+-- Tambahkan alias ke database
+for alias, real in pairs(EGG_ALIASES) do
+    if not EGG[alias] and EGG[real] then
+        EGG[alias] = EGG[real]
+        table.insert(EGG_KEYS, alias)
+    end
 end
 
 table.sort(EGG_KEYS, function(a, b)
@@ -96,18 +135,23 @@ local BAD_NAME = {"hatch", "place", "plant", "incubat", "inventor", "shop", "mac
 local BAD_ANCESTOR = {"hatch", "place", "plant", "incubat", "machine", "shop", "npc", "display", "showcase", "inventory", "mudagen", "mudargen", "reward", "decorat", "furniture"}
 local BAD_PROMPT = {"inventory", "place", "plant", "incubat", "hatch", "shop", "buy", "sell", "tukar", "display", "showcase"}
 local BAD_CHAIN = {"generator", "shop", "npc", "citadel", "merchant", "tukar", "swap", "event", "halloween", "pumpkins", "decorat", "furniture"}
+local MACHINE_WORDS = {"place", "plant", "incubat", "hatch", "inventory"}
 
 -- ===== CONFIG =====
 local CFG = {
     AutoSteal = true, RarityFirst = false, MinRank = 0, StealWait = 1.2, IgnoreTime = 6,
     MachineClear = 25, ReturnRadius = 6, SafeTrail = true, SafeSide = 4,
     AutoInv = true, InvCd = 1.5, InvTries = 3,
+    AutoPlace = false, PlaceReturn = true, MachineCd = 2,
+    AutoHatch = false, HatchCd = 3,
     EggESP = false, XRay = false,
     LowGraphics = false, Walk = false, WalkSpeed = 16, Jump = false, JumpPower = 50,
     AntiAFK = true, AfkIdle = 300, AutoSave = true,
     DetectionRadius = 500, ESPRadius = 500,
     TeleportMode = "Tween", -- "Teleport" or "Tween"
     TweenSpeed = 100,
+    FlyHeight = 20, -- Height to fly when returning
+    FlyEnabled = true, -- Enable flying mode
 }
 local DEFAULT = {}
 for k, v in pairs(CFG) do
@@ -118,24 +162,33 @@ end
 local idx = {egg = {}, prompt = {}, trail = {}}
 local eggSel, espSel = {}, {}
 local visuals, ignored, cooldown, waterCache = {}, {}, {}, {}
-local S = {status = "Memuat...", steal = 0, inv = 0, errors = 0, config = "-", held = "-", low = 0, lowErr = 0, detectedEggs = 0}
+local machCache, machAt = {}, 0
+local S = {status = "Memuat...", steal = 0, inv = 0, place = 0, hatch = 0, errors = 0, config = "-", held = "-", low = 0, lowErr = 0, detectedEggs = 0}
 local zone
 local busy = false
 local paints, uiRefs = {}, {}
 local layout = {main = Vector2.new(0, 0), logo = Vector2.new(0, 0), ready = false}
+local orderSeq = 0
 local lastActive = os.clock()
 local baseWalk, baseJump = 16, 50
-local nextInv = 0
+local nextInv, nextPlace, nextHatch = 0, 0, 0
 local invFails = 0
-local minIdx = 1
 local lastJson = ""
+local minIdx = 1
+local eggSearchQuery = ""
 local isStealing = false
+local isFlying = false
 
 -- ===== UTILITY FUNCTIONS =====
 local function refresh()
     for _, f in ipairs(paints) do
         pcall(f)
     end
+end
+
+local function nextOrder()
+    orderSeq += 1
+    return orderSeq
 end
 
 local function getRoot()
@@ -148,8 +201,8 @@ local function humanoid()
     return ch and ch:FindFirstChildOfClass("Humanoid")
 end
 
--- FIXED MOVEMENT - Teleport or Tween
-local function moveTo(pos)
+-- ===== IMPROVED MOVEMENT SYSTEM =====
+local function tpTo(pos)
     local ch = player.Character
     local r = ch and ch:FindFirstChild("HumanoidRootPart")
     if not r or not pos then return end
@@ -169,15 +222,13 @@ local function moveTo(pos)
     end
     
     if CFG.TeleportMode == "Tween" then
-        -- Tween movement
-        local tweenInfo = TweenInfo.new(
-            (r.Position - targetPos).Magnitude / CFG.TweenSpeed,
-            Enum.EasingStyle.Linear,
-            Enum.EasingDirection.Out
-        )
+        -- Tween movement (smooth)
+        local distance = (r.Position - targetPos).Magnitude
+        local time = distance / CFG.TweenSpeed
+        local tweenInfo = TweenInfo.new(time, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
         local tween = TweenService:Create(ch, tweenInfo, {CFrame = CFrame.new(targetPos)})
         tween:Play()
-        task.wait(tweenInfo.Time)
+        task.wait(time)
     else
         -- Instant teleport
         r.AssemblyLinearVelocity = Vector3.zero
@@ -185,34 +236,45 @@ local function moveTo(pos)
     end
 end
 
-local function tpTo(pos)
-    moveTo(pos)
-end
-
-local function streamAround(pos)
-    if pos then
-        pcall(function()
-            player:RequestStreamAroundAsync(pos, 1024)
-        end)
+-- ===== FLY SYSTEM =====
+local function flyTo(pos)
+    local ch = player.Character
+    local r = ch and ch:FindFirstChild("HumanoidRootPart")
+    if not r or not pos then return end
+    
+    isFlying = true
+    local hum = humanoid()
+    if hum then
+        hum.PlatformStand = true
     end
-end
-
-local function hasAny(text, words)
-    for _, w in ipairs(words) do
-        if string.find(text, w, 1, true) then
-            return true
-        end
+    
+    -- Fly up first
+    local startPos = r.Position
+    local flyUpPos = Vector3.new(startPos.X, startPos.Y + CFG.FlyHeight, startPos.Z)
+    local flyUpTime = CFG.FlyHeight / (CFG.TweenSpeed * 0.5)
+    local flyUpTween = TweenService:Create(ch, TweenInfo.new(flyUpTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {CFrame = CFrame.new(flyUpPos)})
+    flyUpTween:Play()
+    task.wait(flyUpTime)
+    
+    -- Fly to target
+    local targetPos = Vector3.new(pos.X, pos.Y + CFG.FlyHeight, pos.Z)
+    local distance = (flyUpPos - targetPos).Magnitude
+    local flyTime = distance / CFG.TweenSpeed
+    local flyTween = TweenService:Create(ch, TweenInfo.new(flyTime, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut), {CFrame = CFrame.new(targetPos)})
+    flyTween:Play()
+    task.wait(flyTime)
+    
+    -- Land
+    local landPos = Vector3.new(pos.X, pos.Y + 3, pos.Z)
+    local landTime = CFG.FlyHeight / (CFG.TweenSpeed * 0.5)
+    local landTween = TweenService:Create(ch, TweenInfo.new(landTime, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {CFrame = CFrame.new(landPos)})
+    landTween:Play()
+    task.wait(landTime)
+    
+    if hum then
+        hum.PlatformStand = false
     end
-    return false
-end
-
-local function chainOf(inst)
-    local names, node = {}, inst
-    while node and node ~= workspace do
-        table.insert(names, string.lower(node.Name))
-        node = node.Parent
-    end
-    return table.concat(names, " / ")
+    isFlying = false
 end
 
 -- ===== IMPROVED EGG DETECTION =====
@@ -220,13 +282,27 @@ local function eggOf(text)
     if not text then return nil end
     local l = string.lower(text or "")
     
+    -- Direct match
     if EGG[l] then
         return EGG[l]
     end
     
+    -- Alias match
+    if EGG_ALIASES[l] and EGG[EGG_ALIASES[l]] then
+        return EGG[EGG_ALIASES[l]]
+    end
+    
+    -- Partial match (more aggressive)
     for _, k in ipairs(EGG_KEYS) do
         if string.find(l, k, 1, true) then
             return EGG[k]
+        end
+    end
+    
+    -- Fuzzy match: check if any egg name is contained in the text
+    for _, eggData in pairs(EGG) do
+        if eggData.name and string.find(l, string.lower(eggData.name), 1, true) then
+            return eggData
         end
     end
     
@@ -279,72 +355,78 @@ local function clearVisuals()
     end
 end
 
--- IMPROVED: Check if object is actually an egg (not a place/decoration)
-local function isRealEgg(obj)
-    if not (obj:IsA("Model") or obj:IsA("BasePart")) then
-        return false
-    end
-    
-    local n = string.lower(obj.Name)
-    
-    -- Check if it's a trail shop
-    if n == "trail shop" or n == "trailshop" or n == "trail" then
-        return false
-    end
-    
-    -- Check if name matches egg
-    local eggInfo = eggOf(obj.Name)
-    if not eggInfo then
-        return false
-    end
-    
-    -- Check for bad names
-    if hasAny(n, BAD_NAME) then
-        return false
-    end
-    
-    -- Check parent chain
-    local chain = chainOf(obj)
-    if hasAny(chain, BAD_ANCESTOR) then
-        return false
-    end
-    
-    -- Check if it has a ProximityPrompt that's NOT for hatching/placing
-    local hasValidPrompt = false
-    local prompts = obj:GetDescendants()
-    for _, p in ipairs(prompts) do
-        if p:IsA("ProximityPrompt") then
-            local txt = textOf(p)
-            if not hasAny(txt, BAD_PROMPT) then
-                hasValidPrompt = true
-                break
-            end
-        end
-    end
-    
-    -- If it has a valid prompt, it's likely an egg
-    if hasValidPrompt then
-        return true
-    end
-    
-    -- If it has no prompt but is a small model, might still be an egg
-    if obj:IsA("Model") then
-        local size = obj:GetExtentsSize()
-        if size.Magnitude < 20 then
+local function hasAny(text, words)
+    for _, w in ipairs(words) do
+        if string.find(text, w, 1, true) then
             return true
         end
     end
-    
     return false
 end
 
+local function chainOf(inst)
+    local names, node = {}, inst
+    while node and node ~= workspace do
+        table.insert(names, string.lower(node.Name))
+        node = node.Parent
+    end
+    return table.concat(names, " / ")
+end
+
+-- ===== IMPROVED kindOf with better egg detection =====
 local function kindOf(obj)
     if obj:IsA("ProximityPrompt") then
         return "prompt"
     end
+    if not (obj:IsA("Model") or obj:IsA("BasePart")) then
+        return nil
+    end
     
-    if isRealEgg(obj) then
+    local n = string.lower(obj.Name)
+    
+    -- Trail shop check
+    if n == "trail shop" or n == "trailshop" or n == "trail" then
+        return "trail"
+    end
+    
+    -- Egg detection - check name first
+    local eggInfo = eggOf(obj.Name)
+    if eggInfo then
+        -- Skip if name contains bad words (machines, etc)
+        if hasAny(n, BAD_NAME) then
+            -- But check if it's actually an egg model with egg in name
+            if string.find(n, "egg", 1, true) and not hasAny(n, {"hatch", "incubat", "inventor"}) then
+                return "egg"
+            end
+            return nil
+        end
+        
+        -- Skip if parent is also an egg (nested)
+        if obj:IsA("BasePart") and obj.Parent and eggOf(obj.Parent.Name) then
+            return nil
+        end
+        
+        -- Check ancestor chain
+        local chain = chainOf(obj)
+        if hasAny(chain, BAD_ANCESTOR) then
+            -- But allow if it's clearly an egg model
+            if obj:IsA("Model") and eggInfo and not hasAny(chain, {"hatch", "incubat", "inventor"}) then
+                return "egg"
+            end
+            return nil
+        end
+        
         return "egg"
+    end
+    
+    -- Check if object contains egg in name but wasn't matched
+    if string.find(n, "egg", 1, true) and not hasAny(n, BAD_NAME) then
+        -- Try to find closest match
+        for _, eggData in pairs(EGG) do
+            if eggData.name and string.find(n, string.lower(eggData.name):gsub(" ", ""), 1, true) then
+                return "egg"
+            end
+        end
     end
     
     return nil
@@ -364,6 +446,7 @@ local function untrack(obj)
     dropVisual(obj)
 end
 
+-- Initial scan
 for _, d in ipairs(workspace:GetDescendants()) do
     track(d)
 end
@@ -371,7 +454,7 @@ end
 workspace.DescendantAdded:Connect(track)
 workspace.DescendantRemoving:Connect(untrack)
 
--- ===== PROMPT FUNCTIONS =====
+-- ===== PROMPT & MACHINE FUNCTIONS =====
 local function nearestPrompt(pos, pred)
     local best, bestD
     for p in pairs(idx.prompt) do
@@ -388,9 +471,35 @@ local function nearestPrompt(pos, pred)
     return best, bestD
 end
 
--- IMPROVED: Find prompt that belongs to the specific egg model
+local function machinePositions()
+    if os.clock() - machAt < 1 then
+        return machCache
+    end
+    machAt = os.clock()
+    machCache = {}
+    for p in pairs(idx.prompt) do
+        if p:IsDescendantOf(workspace) and hasAny(textOf(p), MACHINE_WORDS) then
+            local pp = promptPos(p)
+            if pp then
+                table.insert(machCache, pp)
+            end
+        end
+    end
+    return machCache
+end
+
+local function nearMachine(pos)
+    for _, mp in ipairs(machinePositions()) do
+        if (mp - pos).Magnitude <= CFG.MachineClear then
+            return true
+        end
+    end
+    return false
+end
+
+-- ===== IMPROVED eggPromptOf =====
 local function eggPromptOf(model)
-    -- First check for prompt directly in the model
+    -- First check if model has its own prompt
     local own = model:FindFirstChildWhichIsA("ProximityPrompt", true)
     if own and not hasAny(textOf(own), BAD_PROMPT) then
         return own
@@ -401,15 +510,14 @@ local function eggPromptOf(model)
         return nil
     end
     
-    -- Check nearby prompts that are close to this egg
+    -- Find nearest prompt to the egg
     local best, bestD
     for p in pairs(idx.prompt) do
         if p:IsDescendantOf(workspace) and p.Enabled and not hasAny(textOf(p), BAD_PROMPT) and not hasAny(chainOf(p), BAD_CHAIN) then
             local pp = promptPos(p)
             if pp then
                 local d = (pp - part.Position).Magnitude
-                -- Only accept prompts very close to the egg
-                if d <= 8 and (not bestD or d < bestD) then
+                if d <= 12 and (not bestD or d < bestD) then
                     best, bestD = p, d
                 end
             end
@@ -459,7 +567,7 @@ local function waitFor(pred, secs)
     return pred() and true or false
 end
 
--- ===== INVENTORY =====
+-- ===== INVENTORY FUNCTIONS =====
 local function eggsIn(c, out)
     if c then
         for _, x in ipairs(c:GetChildren()) do
@@ -509,11 +617,15 @@ local function backToSafe()
     local p = safePos()
     local r = getRoot()
     if p and r and (r.Position - p).Magnitude > CFG.ReturnRadius then
-        tpTo(p)
+        if CFG.FlyEnabled then
+            flyTo(p)
+        else
+            tpTo(p)
+        end
     end
 end
 
--- ===== IMPROVED PICK EGG =====
+-- ===== IMPROVED pickEgg with better detection =====
 local function pickEgg()
     local r = getRoot()
     if not r then
@@ -530,25 +642,33 @@ local function pickEgg()
             local info = eggOf(obj.Name)
             local part = partOf(obj)
             
-            if info and part and isRealEgg(obj) then
+            if info and part then
                 local dist = (part.Position - r.Position).Magnitude
                 
                 if dist <= detectionRadius then
                     eggCount = eggCount + 1
                     
+                    -- Check if egg is selected in filter
                     if selOn(eggSel, info.key) and info.rank >= CFG.MinRank then
+                        -- Check ancestor chain
                         local chain = chainOf(obj)
                         if not hasAny(chain, BAD_ANCESTOR) then
-                            local cand = {model = obj, part = part, info = info, dist = dist}
+                            -- Check machine proximity (but don't skip if it's the only option)
+                            local nearMach = nearMachine(part.Position)
                             
-                            if not best then
-                                best = cand
-                            elseif CFG.RarityFirst then
-                                if cand.info.rank > best.info.rank or (cand.info.rank == best.info.rank and cand.dist < best.dist) then
+                            -- Only skip if near machine AND there are other options
+                            if not nearMach or not best then
+                                local cand = {model = obj, part = part, info = info, dist = dist}
+                                
+                                if not best then
+                                    best = cand
+                                elseif CFG.RarityFirst then
+                                    if cand.info.rank > best.info.rank or (cand.info.rank == best.info.rank and cand.dist < best.dist) then
+                                        best = cand
+                                    end
+                                elseif cand.dist < best.dist then
                                     best = cand
                                 end
-                            elseif cand.dist < best.dist then
-                                best = cand
                             end
                         end
                     end
@@ -557,10 +677,11 @@ local function pickEgg()
         end
     end
     
+    -- Update status with detection info
     S.detectedEggs = eggCount
     
     if eggCount > 0 and not best then
-        S.status = string.format("Ditemukan %d egg, tapi tidak cocok dengan filter", eggCount)
+        S.status = string.format("Ditemukan %d egg, tapi tidak ada yang cocok dengan filter", eggCount)
     elseif eggCount == 0 then
         S.status = "Tidak ada egg terdeteksi dalam radius " .. detectionRadius
     end
@@ -568,7 +689,7 @@ local function pickEgg()
     return best
 end
 
--- ===== IMPROVED STEAL =====
+-- ===== IMPROVED STEAL FUNCTION =====
 local function steal(e)
     if isStealing then
         return false
@@ -584,7 +705,13 @@ local function steal(e)
         end
         
         streamAround(e.part.Position)
-        tpTo(e.part.Position)
+        
+        -- Move to egg (with fly if enabled)
+        if CFG.FlyEnabled then
+            flyTo(e.part.Position)
+        else
+            tpTo(e.part.Position)
+        end
         task.wait(0.15)
         
         -- Find the correct prompt for this specific egg
@@ -620,7 +747,7 @@ local function steal(e)
     return success
 end
 
--- ===== PROMPT INTERACTIONS =====
+-- ===== PROMPT & MACHINE INTERACTIONS =====
 local function findPromptNearest(words)
     local r = getRoot()
     if not r then
@@ -649,7 +776,11 @@ local function useMachine(p)
     local pos = promptPos(p)
     if pos then
         streamAround(pos)
-        tpTo(pos)
+        if CFG.FlyEnabled then
+            flyTo(pos)
+        else
+            tpTo(pos)
+        end
     end
     task.wait(0.1)
     firePrompt(p)
@@ -675,6 +806,60 @@ local function putInventory()
     end
     S.status = "Egg belum masuk inventory, dicoba lagi"
     return false
+end
+
+local function placeEgg()
+    local p = ensurePrompt({"place", "plant", "incubat"})
+    if not p then
+        S.status = "Mesin place tidak ketemu"
+        return false
+    end
+    local beforeHand = #handEggs()
+    cooldown[p] = os.clock() + CFG.MachineCd
+    local pos = promptPos(p)
+    if pos then
+        streamAround(pos)
+        if CFG.FlyEnabled then
+            flyTo(pos)
+        else
+            tpTo(pos)
+        end
+    end
+    task.wait(0.1)
+    firePrompt(p)
+    local ok = waitFor(function()
+        return #handEggs() < beforeHand
+    end, 1.5)
+    local safe = safePos()
+    if CFG.PlaceReturn and safe then
+        if CFG.FlyEnabled then
+            flyTo(safe)
+        else
+            tpTo(safe)
+        end
+    else
+        backToSafe()
+    end
+    if ok then
+        S.place += 1
+        S.status = "Egg ditaruh ke mesin"
+        return true
+    end
+    S.status = "Place belum berhasil, dicoba lagi"
+    return false
+end
+
+local function hatchOnce()
+    local p = ensurePrompt({"hatch"})
+    if not p then
+        return false
+    end
+    cooldown[p] = os.clock() + CFG.HatchCd
+    useMachine(p)
+    backToSafe()
+    S.hatch += 1
+    S.status = "Hatch dijalankan"
+    return true
 end
 
 local function ensureInventoryStep()
@@ -717,8 +902,25 @@ local function mainTick()
             ensureInventoryStep()
             return
         end
-        S.status = "Egg di tangan. Nyalakan Auto Inventory"
+        if CFG.AutoPlace and os.clock() >= nextPlace then
+            nextPlace = os.clock() + CFG.MachineCd
+            busy = true
+            placeEgg()
+            busy = false
+            return
+        end
+        S.status = CFG.AutoPlace and "Egg di tangan, menunggu Auto Place" or "Egg di tangan. Nyalakan Auto Inventory atau Auto Place"
         return
+    end
+    
+    if CFG.AutoHatch and os.clock() >= nextHatch then
+        nextHatch = os.clock() + CFG.HatchCd
+        busy = true
+        local did = hatchOnce()
+        busy = false
+        if did then
+            return
+        end
     end
     
     if not CFG.AutoSteal then
@@ -749,7 +951,7 @@ local function mainTick()
     end
 end
 
--- ===== IMPROVED VISUAL =====
+-- ===== WATER & VISUAL =====
 local function isWater(pos)
     local ok, res = pcall(function()
         local region = Region3.new(pos - Vector3.new(3, 3, 3), pos + Vector3.new(3, 3, 3)):ExpandToGrid(4)
@@ -784,7 +986,7 @@ local function collectVisuals()
         local info = eggOf(obj.Name)
         local part = obj:IsDescendantOf(workspace) and not (ch and obj:IsDescendantOf(ch)) and partOf(obj)
         
-        if info and part and isRealEgg(obj) and selOn(espSel, info.key) and not hasAny(chainOf(obj), BAD_ANCESTOR) then
+        if info and part and selOn(espSel, info.key) and not hasAny(chainOf(obj), BAD_ANCESTOR) then
             local dist = (part.Position - rp).Magnitude
             
             if dist <= espRadius then
@@ -1124,7 +1326,7 @@ local function section(page, text)
     make("TextLabel", {
         Size = UDim2.new(1, 0, 0, 20), BackgroundTransparency = 1, Text = string.upper(text),
         TextColor3 = C.Accent, Font = Enum.Font.GothamBold, TextSize = 11,
-        TextXAlignment = Enum.TextXAlignment.Left,
+        TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = nextOrder(),
     }, page)
 end
 
@@ -1133,16 +1335,18 @@ local function note(page, text)
         Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1,
         TextWrapped = true, Text = text, TextColor3 = C.Muted, Font = Enum.Font.Gotham, TextSize = 11,
         TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
+        LayoutOrder = nextOrder(),
     }, page)
 end
 
--- ===== SIMPLE TOGGLE =====
+-- ===== MODERN TOGGLE =====
 local function switch(page, label, key, onChange)
     local row = make("TextButton", {
         Size = UDim2.new(1, 0, 0, 36), BackgroundColor3 = C.Card, BorderSizePixel = 0,
-        AutoButtonColor = false, Text = "",
+        AutoButtonColor = false, Text = "", LayoutOrder = nextOrder(),
     }, page)
     corner(row, 10)
+    
     make("UIStroke", {Color = C.PinkBorder, Transparency = 0.8, Thickness = 1}, row)
     
     make("TextLabel", {
@@ -1179,12 +1383,13 @@ local function switch(page, label, key, onChange)
     end)
 end
 
--- ===== SIMPLE STEPPER =====
+-- ===== MODERN STEPPER =====
 local function stepper(page, label, key, step, lo, hi)
     local r = make("Frame", {
-        Size = UDim2.new(1, 0, 0, 36), BackgroundColor3 = C.Card, BorderSizePixel = 0,
+        Size = UDim2.new(1, 0, 0, 36), BackgroundColor3 = C.Card, BorderSizePixel = 0, LayoutOrder = nextOrder(),
     }, page)
     corner(r, 10)
+    
     make("UIStroke", {Color = C.PinkBorder, Transparency = 0.8, Thickness = 1}, r)
     
     make("TextLabel", {
@@ -1222,13 +1427,15 @@ local function stepper(page, label, key, step, lo, hi)
     end)
 end
 
--- ===== SIMPLE EGG ROW =====
+-- ===== MODERN EGG ROW =====
 local function eggRow(page, sel, e)
     local key = string.lower(e[1])
     local b = btn(page, "", C.Row, 30)
+    b.LayoutOrder = nextOrder()
     b.Font = Enum.Font.Gotham
     b.TextSize = 11
     b.TextXAlignment = Enum.TextXAlignment.Left
+    
     make("UIPadding", {PaddingLeft = UDim.new(0, 12)}, b)
     
     table.insert(paints, function()
@@ -1242,6 +1449,55 @@ local function eggRow(page, sel, e)
         sel[key] = not selOn(sel, key)
         refresh()
     end)
+end
+
+-- ===== MODERN EGG LIST =====
+local function eggList(page, sel, withMin)
+    local r = make("Frame", {Size = UDim2.new(1, 0, 0, 32), BackgroundTransparency = 1, LayoutOrder = nextOrder()}, page)
+    
+    local all = btn(r, "Pilih semua", C.AccentDark, 32)
+    all.Size = UDim2.new(withMin and 0.34 or 0.5, -4, 1, 0)
+    all.TextColor3 = C.Text
+    
+    local none = btn(r, "Kosongkan", C.Row, 32)
+    none.Size = UDim2.new(withMin and 0.33 or 0.5, -4, 1, 0)
+    none.Position = UDim2.new(withMin and 0.34 or 0.5, 4, 0, 0)
+    none.TextColor3 = C.Muted
+    
+    all.MouseButton1Click:Connect(function()
+        for _, e in ipairs(EGG_LIST) do
+            sel[string.lower(e[1])] = true
+        end
+        refresh()
+    end)
+    
+    none.MouseButton1Click:Connect(function()
+        for _, e in ipairs(EGG_LIST) do
+            sel[string.lower(e[1])] = false
+        end
+        refresh()
+    end)
+    
+    if withMin then
+        local minB = btn(r, "", C.Row, 32)
+        minB.Size = UDim2.new(0.33, -4, 1, 0)
+        minB.Position = UDim2.new(0.67, 4, 0, 0)
+        minB.TextColor3 = C.Accent
+        
+        minB.MouseButton1Click:Connect(function()
+            minIdx = minIdx % #MIN_STEPS + 1
+            CFG.MinRank = MIN_STEPS[minIdx][2]
+            refresh()
+        end)
+        
+        table.insert(paints, function()
+            minB.Text = "Min: " .. MIN_STEPS[minIdx][1]
+        end)
+    end
+    
+    for _, e in ipairs(EGG_LIST) do
+        eggRow(page, sel, e)
+    end
 end
 
 -- ===== PREMIUM LOGO KH =====
@@ -1512,14 +1768,14 @@ local function buildUI()
     local detectedLabel = make("TextLabel", {
         Size = UDim2.new(1, 0, 0, 20), BackgroundTransparency = 1,
         TextColor3 = C.Accent, Font = Enum.Font.GothamBold, TextSize = 12,
-        TextXAlignment = Enum.TextXAlignment.Left,
+        TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = nextOrder(),
     }, mp)
     table.insert(paints, function()
         detectedLabel.Text = string.format("Egg terdeteksi: %d", S.detectedEggs)
     end)
     
     section(mp, "Safe Zone")
-    local zr = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1}, mp)
+    local zr = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, LayoutOrder = nextOrder()}, mp)
     
     local zoneBtn = btn(zr, "Set Safe Zone", C.AccentDark, 34)
     zoneBtn.Size = UDim2.new(0.5, -4, 1, 0)
@@ -1544,7 +1800,11 @@ local function buildUI()
     tpBtn.MouseButton1Click:Connect(function()
         local p = safePos()
         if p then
-            tpTo(p)
+            if CFG.FlyEnabled then
+                flyTo(p)
+            else
+                tpTo(p)
+            end
             S.status = "Teleport ke safe zone"
         else
             S.status = "Safe zone belum di-set"
@@ -1563,7 +1823,7 @@ local function buildUI()
     section(mp, "Config")
     switch(mp, "Auto Save", "AutoSave")
     
-    local cr = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1}, mp)
+    local cr = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, LayoutOrder = nextOrder()}, mp)
     local saveBtn = btn(cr, "Simpan", C.AccentDark, 34)
     saveBtn.Size = UDim2.new(0.5, -4, 1, 0)
     saveBtn.TextColor3 = C.Text
@@ -1583,6 +1843,7 @@ local function buildUI()
     end)
     
     local resetBtn = btn(mp, "Reset ke Default", C.Row, 34)
+    resetBtn.LayoutOrder = nextOrder()
     resetBtn.TextColor3 = C.Warning
     resetBtn.MouseButton1Click:Connect(function()
         for k, v in pairs(DEFAULT) do
@@ -1602,64 +1863,65 @@ local function buildUI()
     end)
     
     -- ===== FILTER EGG TAB =====
-    section(ep, "Filter Egg")
-    note(ep, "Egg yang tidak dicentang tidak di-steal.")
+    section(ep, "Filter Egg untuk Steal")
+    note(ep, "Egg yang tidak dicentang tidak akan di-steal.")
     
-    local btnFrame = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1}, ep)
-    local allBtn = btn(btnFrame, "Pilih Semua", C.AccentDark, 34)
-    allBtn.Size = UDim2.new(0.5, -4, 1, 0)
-    allBtn.TextColor3 = C.Text
+    -- Search bar
+    local searchFrame = make("Frame", {
+        Size = UDim2.new(1, 0, 0, 36), BackgroundColor3 = C.Card, BorderSizePixel = 0, LayoutOrder = nextOrder(),
+    }, ep)
+    corner(searchFrame, 10)
+    make("UIStroke", {Color = C.PinkBorder, Transparency = 0.7, Thickness = 1}, searchFrame)
     
-    local noneBtn = btn(btnFrame, "Kosongkan", C.Row, 34)
-    noneBtn.Size = UDim2.new(0.5, -4, 1, 0)
-    noneBtn.Position = UDim2.new(0.5, 4, 0, 0)
-    noneBtn.TextColor3 = C.Muted
+    local searchBox = make("TextBox", {
+        Size = UDim2.new(1, -20, 0, 28), Position = UDim2.fromOffset(10, 4), BackgroundColor3 = C.Row, BorderSizePixel = 0,
+        Text = "", PlaceholderText = "🔍 Cari egg...", PlaceholderColor3 = C.Muted,
+        TextColor3 = C.Text, Font = Enum.Font.Gotham, TextSize = 12, ClearTextOnFocus = false,
+        TextXAlignment = Enum.TextXAlignment.Left,
+    }, searchFrame)
+    corner(searchBox, 8)
+    make("UIPadding", {PaddingLeft = UDim.new(0, 10)}, searchBox)
     
-    allBtn.MouseButton1Click:Connect(function()
-        for _, e in ipairs(EGG_LIST) do
-            eggSel[string.lower(e[1])] = true
-        end
-        refresh()
-    end)
-    
-    noneBtn.MouseButton1Click:Connect(function()
-        for _, e in ipairs(EGG_LIST) do
-            eggSel[string.lower(e[1])] = false
-        end
-        refresh()
-    end)
-    
-    local minFrame = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1}, ep)
-    local minBtn = btn(minFrame, "", C.Row, 34)
-    minBtn.Size = UDim2.new(1, 0, 1, 0)
-    minBtn.TextColor3 = C.Accent
-    
-    minBtn.MouseButton1Click:Connect(function()
-        minIdx = minIdx % #MIN_STEPS + 1
-        CFG.MinRank = MIN_STEPS[minIdx][2]
+    local filteredEggs = {}
+    searchBox.FocusLost:Connect(function()
+        eggSearchQuery = string.lower(searchBox.Text or "")
         refresh()
     end)
     
     table.insert(paints, function()
-        minBtn.Text = "Min Rank: " .. MIN_STEPS[minIdx][1]
+        filteredEggs = {}
+        for _, e in ipairs(EGG_LIST) do
+            if eggSearchQuery == "" or string.find(string.lower(e[1]), eggSearchQuery, 1, true) then
+                filteredEggs[#filteredEggs + 1] = e
+            end
+        end
     end)
     
-    for _, e in ipairs(EGG_LIST) do
-        eggRow(ep, eggSel, e)
-    end
+    eggList(ep, eggSel, true)
     
     -- ===== AUTO TAB =====
     section(ap, "Auto Inventory")
-    note(ap, "Saat egg di tangan, tekan Put To Inventory.")
+    note(ap, "Saat egg di tangan, script menekan Put To Inventory.")
     switch(ap, "Auto Inventory", "AutoInv")
     stepper(ap, "Cooldown (detik)", "InvCd", 0.5, 0.5, 10)
     stepper(ap, "Gagal sebelum pindah", "InvTries", 1, 1, 10)
+    
+    section(ap, "Auto Place")
+    note(ap, "Dipakai jika Auto Inventory mati.")
+    switch(ap, "Auto Place", "AutoPlace")
+    switch(ap, "Balik ke safe zone", "PlaceReturn")
+    stepper(ap, "Cooldown place (detik)", "MachineCd", 0.5, 0.5, 10)
+    
+    section(ap, "Auto Hatch")
+    note(ap, "Saat tidak memegang egg, teleport ke mesin hatch.")
+    switch(ap, "Auto Hatch", "AutoHatch")
+    stepper(ap, "Cooldown hatch (detik)", "HatchCd", 0.5, 0.5, 30)
     
     -- ===== GERAK TAB =====
     section(gerakp, "Mode Gerak")
     note(gerakp, "Pilih cara bergerak ke egg.")
     
-    local modeFrame = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1}, gerakp)
+    local modeFrame = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, LayoutOrder = nextOrder()}, gerakp)
     local tpModeBtn = btn(modeFrame, "Teleport", C.Row, 34)
     tpModeBtn.Size = UDim2.new(0.5, -4, 1, 0)
     tpModeBtn.TextColor3 = C.Muted
@@ -1688,6 +1950,11 @@ local function buildUI()
     
     stepper(gerakp, "Kecepatan Tween", "TweenSpeed", 10, 50, 500)
     
+    section(gerakp, "Fly Mode")
+    note(gerakp, "Terbang ke egg dan kembali ke safe zone.")
+    switch(gerakp, "Fly Enabled", "FlyEnabled")
+    stepper(gerakp, "Tinggi Terbang", "FlyHeight", 5, 5, 100)
+    
     section(gerakp, "WalkSpeed")
     switch(gerakp, "WalkSpeed", "Walk", function(on)
         local hum = humanoid()
@@ -1708,50 +1975,25 @@ local function buildUI()
     
     -- ===== ESP TAB =====
     section(esp, "Egg ESP")
-    note(esp, "Tandai egg dengan nama dan jarak.")
+    note(esp, "Menandai egg dengan nama dan jarak.")
     switch(esp, "Egg ESP", "EggESP")
     
     section(esp, "X-Ray")
-    note(esp, "Tampilkan luck egg di air.")
+    note(esp, "Menampilkan luck egg di air.")
     switch(esp, "X-Ray Egg", "XRay")
     
     section(esp, "Filter ESP")
-    local espBtnFrame = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1}, esp)
-    local espAllBtn = btn(espBtnFrame, "Pilih Semua", C.AccentDark, 34)
-    espAllBtn.Size = UDim2.new(0.5, -4, 1, 0)
-    espAllBtn.TextColor3 = C.Text
-    
-    local espNoneBtn = btn(espBtnFrame, "Kosongkan", C.Row, 34)
-    espNoneBtn.Size = UDim2.new(0.5, -4, 1, 0)
-    espNoneBtn.Position = UDim2.new(0.5, 4, 0, 0)
-    espNoneBtn.TextColor3 = C.Muted
-    
-    espAllBtn.MouseButton1Click:Connect(function()
-        for _, e in ipairs(EGG_LIST) do
-            espSel[string.lower(e[1])] = true
-        end
-        refresh()
-    end)
-    
-    espNoneBtn.MouseButton1Click:Connect(function()
-        for _, e in ipairs(EGG_LIST) do
-            espSel[string.lower(e[1])] = false
-        end
-        refresh()
-    end)
-    
-    for _, e in ipairs(EGG_LIST) do
-        eggRow(esp, espSel, e)
-    end
+    eggList(esp, espSel, false)
     
     -- ===== GRAFIK TAB =====
     section(gp, "Low Graphics")
-    note(gp, "Optimasi grafis untuk performa.")
+    note(gp, "Optimasi grafis untuk performa lebih baik.")
     switch(gp, "Low Graphics", "LowGraphics", function(on)
         lowSet(on)
     end)
     
     local reapply = btn(gp, "Terapkan ulang", C.Row, 34)
+    reapply.LayoutOrder = nextOrder()
     reapply.TextColor3 = C.Accent
     reapply.MouseButton1Click:Connect(function()
         if low.on then
@@ -1765,7 +2007,7 @@ local function buildUI()
     local lowInfo = make("TextLabel", {
         Size = UDim2.new(1, 0, 0, 20), BackgroundTransparency = 1,
         TextColor3 = C.Muted, Font = Enum.Font.Gotham, TextSize = 11,
-        TextXAlignment = Enum.TextXAlignment.Left,
+        TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = nextOrder(),
     }, gp)
     table.insert(paints, function()
         lowInfo.Text = string.format("Objek: %d | Error: %d | Antrian: %d", S.low, S.lowErr, #low.queue)
@@ -1773,9 +2015,10 @@ local function buildUI()
     
     -- ===== KOMUNITAS TAB =====
     section(dp, "Discord")
-    note(dp, "Info, update, dan saran fitur.")
+    note(dp, "Info, update script, dan saran fitur.")
     
     local discordCopy = btn(dp, "Salin link Discord", C.AccentDark, 36)
+    discordCopy.LayoutOrder = nextOrder()
     discordCopy.TextColor3 = C.Text
     discordCopy.MouseButton1Click:Connect(function()
         local ok = copyLink(DISCORD)
@@ -1784,9 +2027,10 @@ local function buildUI()
     note(dp, DISCORD)
     
     section(dp, "WhatsApp")
-    note(dp, "Saluran update terbaru.")
+    note(dp, "Saluran WhatsApp untuk update terbaru.")
     
     local waCopy = btn(dp, "Salin link WhatsApp", C.AccentDark, 36)
+    waCopy.LayoutOrder = nextOrder()
     waCopy.TextColor3 = C.Text
     waCopy.MouseButton1Click:Connect(function()
         local ok = copyLink(WHATSAPP)
@@ -1796,7 +2040,7 @@ local function buildUI()
     
     -- Status bar updates
     table.insert(paints, function()
-        subtitle.Text = string.format("Steal %d | Inv %d", S.steal, S.inv)
+        subtitle.Text = string.format("Steal %d | Inv %d | Place %d | Hatch %d", S.steal, S.inv, S.place, S.hatch)
         statusLbl.Text = string.format("%s | Egg: %d | Config: %s", S.status, S.detectedEggs, S.config)
     end)
     
@@ -1988,4 +2232,4 @@ loop("autosave", 3, function()
 end)
 loop("ui", 0.4, refresh)
 
-notify("kayeshiHUB v2.4 aktif. K = menu, F = auto steal.")p
+notify("kayeshiHUB v2.4 aktif. K = menu, F = auto steal.")
