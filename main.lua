@@ -1,4 +1,4 @@
--- kayeshiHUB v2.2 - Dark Pink Premium Edition (Fixed)
+-- kayeshiHUB v2.3 - Dark Pink Premium Edition (Ultimate Fixed)
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local StarterGui = game:GetService("StarterGui")
@@ -21,7 +21,7 @@ local function notify(text)
     end)
 end
 
-notify("kayeshiHUB v2.2 memuat...")
+notify("kayeshiHUB v2.3 memuat...")
 
 -- ===== THEME DARK PINK =====
 local C = {
@@ -133,12 +133,10 @@ local MIN_STEPS = {
 }
 
 -- ===== KONSTANTA DETEKSI =====
-local BAD_NAME = {"hatch", "place", "plant", "incubat", "inventor", "shop", "machine", "npc", "sell", "buy", "tukar", "merchant", "vendor"}
+local BAD_NAME = {"hatch", "place", "plant", "incubat", "inventor", "shop", "machine", "npc", "sell", "buy", "tukar", "merchant", "vendor", "shopkeeper", "trader", "display", "showcase"}
 local BAD_ANCESTOR = {"hatch", "place", "plant", "incubat", "machine", "shop", "npc", "display", "showcase", "inventory", "mudagen", "mudargen", "reward", "merchant", "vendor", "shopkeeper", "trader"}
 local BAD_PROMPT = {"inventory", "place", "plant", "incubat", "hatch", "shop", "buy", "sell", "tukar", "merchant", "vendor"}
 local BAD_CHAIN = {"generator", "shop", "npc", "citadel", "merchant", "tukar", "swap", "event", "halloween", "pumpkins", "vendor", "shopkeeper", "trader"}
-local MACHINE_WORDS = {"place", "plant", "incubat", "hatch", "inventory"}
-local PLACE_AREA_WORDS = {"place", "plant", "incubat", "machine", "mesin", "incubator"}
 local LOW_OFF = {
     ParticleEmitter = true, Trail = true, Beam = true, Smoke = true, Fire = true, Sparkles = true,
     PointLight = true, SpotLight = true, SurfaceLight = true, Clouds = true,
@@ -153,7 +151,7 @@ local CFG = {
     LowGraphics = false, Walk = false, WalkSpeed = 16, Jump = false, JumpPower = 50,
     AntiAFK = true, AfkIdle = 300, AutoSave = true,
     DetectionRadius = 500, ESPRadius = 500,
-    StealMode = "Tween", -- "Tween" or "Teleport"
+    StealMode = "Tween",
 }
 local DEFAULT = {}
 for k, v in pairs(CFG) do
@@ -345,7 +343,7 @@ local function kindOf(obj)
     -- Egg detection
     local eggInfo = eggOf(obj.Name)
     if eggInfo then
-        -- Skip if name contains bad words (NPC, shop, etc)
+        -- Skip if name contains bad words
         if hasAny(n, BAD_NAME) then
             return nil
         end
@@ -398,7 +396,7 @@ end
 workspace.DescendantAdded:Connect(track)
 workspace.DescendantRemoving:Connect(untrack)
 
--- ===== PROMPT & MACHINE FUNCTIONS =====
+-- ===== PROMPT FUNCTIONS =====
 local function nearestPrompt(pos, pred)
     local best, bestD
     for p in pairs(idx.prompt) do
@@ -413,67 +411,6 @@ local function nearestPrompt(pos, pred)
         end
     end
     return best, bestD
-end
-
-local function machinePositions()
-    if os.clock() - machAt < 1 then
-        return machCache
-    end
-    machAt = os.clock()
-    machCache = {}
-    for p in pairs(idx.prompt) do
-        if p:IsDescendantOf(workspace) and hasAny(textOf(p), MACHINE_WORDS) then
-            local pp = promptPos(p)
-            if pp then
-                table.insert(machCache, pp)
-            end
-        end
-    end
-    return machCache
-end
-
-local function nearMachine(pos)
-    for _, mp in ipairs(machinePositions()) do
-        if (mp - pos).Magnitude <= CFG.MachineClear then
-            return true
-        end
-    end
-    return false
-end
-
--- ===== IMPROVED PLACE AREA DETECTION =====
-local function isInPlaceArea(obj)
-    -- Check if object is near a place/incubator machine
-    local part = partOf(obj)
-    if not part then
-        return false
-    end
-    
-    local pos = part.Position
-    
-    -- Check proximity to place machines (but only if the egg is VERY close)
-    for p in pairs(idx.prompt) do
-        if p:IsDescendantOf(workspace) and hasAny(textOf(p), PLACE_AREA_WORDS) then
-            local pp = promptPos(p)
-            if pp and (pp - pos).Magnitude <= 8 then -- Reduced to 8 for accuracy
-                return true
-            end
-        end
-    end
-    
-    -- Check ancestor chain for place-related words
-    local chain = chainOf(obj)
-    if hasAny(chain, PLACE_AREA_WORDS) then
-        return true
-    end
-    
-    -- Check if object name contains place-related words
-    local n = string.lower(obj.Name)
-    if hasAny(n, PLACE_AREA_WORDS) then
-        return true
-    end
-    
-    return false
 end
 
 local function eggPromptOf(model)
@@ -631,21 +568,18 @@ local function pickEgg()
                         -- Check ancestor chain - skip if in bad area
                         local chain = chainOf(obj)
                         if not hasAny(chain, BAD_ANCESTOR) then
-                            -- Skip if in place area (too close to machine)
-                            if not isInPlaceArea(obj) then
-                                validEggCount = validEggCount + 1
-                                
-                                local cand = {model = obj, part = part, info = info, dist = dist}
-                                
-                                if not best then
-                                    best = cand
-                                elseif CFG.RarityFirst then
-                                    if cand.info.rank > best.info.rank or (cand.info.rank == best.info.rank and cand.dist < best.dist) then
-                                        best = cand
-                                    end
-                                elseif cand.dist < best.dist then
+                            validEggCount = validEggCount + 1
+                            
+                            local cand = {model = obj, part = part, info = info, dist = dist}
+                            
+                            if not best then
+                                best = cand
+                            elseif CFG.RarityFirst then
+                                if cand.info.rank > best.info.rank or (cand.info.rank == best.info.rank and cand.dist < best.dist) then
                                     best = cand
                                 end
+                            elseif cand.dist < best.dist then
+                                best = cand
                             end
                         end
                     end
@@ -715,7 +649,7 @@ local function steal(e)
     return false
 end
 
--- ===== PROMPT & MACHINE INTERACTIONS =====
+-- ===== PROMPT INTERACTIONS =====
 local function findPromptNearest(words)
     local r = getRoot()
     if not r then
@@ -1477,7 +1411,7 @@ local function copyLink(url)
     end)
 end
 
--- ===== LOGO KH ANIMATED =====
+-- ===== LOGO KH ANIMATED (FIXED) =====
 local function createLogo(parent, size)
     local logoFrame = make("Frame", {
         Size = UDim2.fromOffset(size, size),
@@ -1486,6 +1420,7 @@ local function createLogo(parent, size)
     }, parent)
     corner(logoFrame, size * 0.3)
     
+    -- Gradient
     local gradient = make("UIGradient", {
         Color = ColorSequence.new({
             ColorSequenceKeypoint.new(0, C.HotPink),
@@ -1495,6 +1430,7 @@ local function createLogo(parent, size)
         Rotation = 45,
     }, logoFrame)
     
+    -- Gloss effect
     local gloss = make("Frame", {
         Size = UDim2.new(1, 0, 0.5, 0),
         BackgroundColor3 = Color3.fromRGB(255, 255, 255),
@@ -1503,6 +1439,7 @@ local function createLogo(parent, size)
     }, logoFrame)
     corner(gloss, size * 0.3)
     
+    -- KH Text
     local khText = make("TextLabel", {
         Size = UDim2.new(1, 0, 1, 0),
         BackgroundTransparency = 1,
@@ -1512,14 +1449,17 @@ local function createLogo(parent, size)
         TextSize = size * 0.4,
         TextStrokeTransparency = 0,
         TextStrokeColor3 = C.HotPink,
+        ZIndex = 2,
     }, logoFrame)
     
+    -- Glow effect
     local glow = make("UIStroke", {
         Color = C.Accent,
         Thickness = 2,
         Transparency = 0.3,
     }, logoFrame)
     
+    -- Animation loop
     task.spawn(function()
         local t = 0
         while logoFrame.Parent do
@@ -1611,7 +1551,7 @@ local function showWelcomePopup()
         Size = UDim2.new(1, -40, 0, 80),
         Position = UDim2.new(0, 20, 0, 170),
         BackgroundTransparency = 1,
-        Text = "v2.2 Dark Pink Premium Edition\nAuto Steal lebih pintar\nUI lebih clean & modern",
+        Text = "v2.3 Dark Pink Premium Edition\nAuto Steal lebih pintar\nUI lebih clean & modern",
         TextColor3 = C.Muted,
         Font = Enum.Font.Gotham,
         TextSize = 14,
@@ -1642,7 +1582,7 @@ local function showWelcomePopup()
         Size = UDim2.new(1, -40, 0, 30),
         Position = UDim2.new(0, 20, 0, 390),
         BackgroundTransparency = 1,
-        Text = "kayeshiHUB v2.2",
+        Text = "kayeshiHUB v2.3",
         TextColor3 = C.Muted,
         Font = Enum.Font.Gotham,
         TextSize = 12,
@@ -1667,7 +1607,7 @@ local function buildUI()
     -- Main Panel
     local main = make("Frame", {
         AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(PANEL_W, PANEL_H),
-        BackgroundColor3 = C.Panel, BorderSizePixel = 0,
+        BackgroundColor3 = C.Panel, BorderSizePixel = 0, ZIndex = 10,
     }, gui)
     corner(main, 16)
     make("UIStroke", {Color = C.PinkBorder, Transparency = 0.5, Thickness = 1}, main)
@@ -1675,22 +1615,23 @@ local function buildUI()
     uiRefs.scale = make("UIScale", {Scale = 1}, main)
     
     -- Header
-    local header = make("Frame", {Size = UDim2.new(1, 0, 0, 52), BackgroundColor3 = C.Side, BorderSizePixel = 0}, main)
+    local header = make("Frame", {Size = UDim2.new(1, 0, 0, 52), BackgroundColor3 = C.Side, BorderSizePixel = 0, ZIndex = 11}, main)
     corner(header, 16)
     
     local headerLogo = createLogo(header, 36)
     headerLogo.Position = UDim2.new(0, 12, 0.5, -18)
+    headerLogo.ZIndex = 12
     
     make("TextLabel", {
         Size = UDim2.new(0, 200, 0, 22), Position = UDim2.fromOffset(56, 6), BackgroundTransparency = 1,
         Text = "kayeshiHUB", TextColor3 = C.Text, Font = Enum.Font.GothamBold, TextSize = 18,
-        TextXAlignment = Enum.TextXAlignment.Left,
+        TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 12,
     }, header)
     
     local subtitle = make("TextLabel", {
         Size = UDim2.new(1, -130, 0, 14), Position = UDim2.fromOffset(56, 28), BackgroundTransparency = 1,
         TextColor3 = C.Muted, Font = Enum.Font.Gotham, TextSize = 10,
-        TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+        TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 12,
     }, header)
     
     -- Hide button
@@ -1699,11 +1640,12 @@ local function buildUI()
     hideBtn.Position = UDim2.new(1, -98, 0, 12)
     hideBtn.TextSize = 11
     hideBtn.TextColor3 = C.Text
+    hideBtn.ZIndex = 12
     
     -- Sidebar
     local side = make("Frame", {
         Position = UDim2.fromOffset(10, 60), Size = UDim2.new(0, 140, 1, -126),
-        BackgroundColor3 = C.Side, BorderSizePixel = 0,
+        BackgroundColor3 = C.Side, BorderSizePixel = 0, ZIndex = 11,
     }, main)
     corner(side, 12)
     make("UIStroke", {Color = C.PinkBorder, Transparency = 0.7, Thickness = 1}, side)
@@ -1713,21 +1655,21 @@ local function buildUI()
     -- Content Area
     local content = make("Frame", {
         Position = UDim2.fromOffset(158, 60), Size = UDim2.new(1, -168, 1, -126),
-        BackgroundColor3 = C.Side, BorderSizePixel = 0,
+        BackgroundColor3 = C.Side, BorderSizePixel = 0, ZIndex = 11,
     }, main)
     corner(content, 12)
     
     -- Footer
     local footer = make("Frame", {
         Position = UDim2.new(0, 10, 1, -60), Size = UDim2.new(1, -20, 0, 50),
-        BackgroundColor3 = C.Side, BorderSizePixel = 0,
+        BackgroundColor3 = C.Side, BorderSizePixel = 0, ZIndex = 11,
     }, main)
     corner(footer, 12)
     
     local statusLbl = make("TextLabel", {
         Size = UDim2.new(1, -20, 1, 0), Position = UDim2.fromOffset(10, 0), BackgroundTransparency = 1,
         TextColor3 = C.Muted, Font = Enum.Font.Gotham, TextSize = 11,
-        TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+        TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 12,
     }, footer)
     
     -- Tabs
@@ -1741,7 +1683,7 @@ local function buildUI()
         local page = make("ScrollingFrame", {
             Position = UDim2.fromOffset(8, 8), Size = UDim2.new(1, -16, 1, -16), BackgroundTransparency = 1,
             BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = C.Muted,
-            CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, Visible = false,
+            CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, Visible = false, ZIndex = 12,
         }, content)
         make("UIListLayout", {Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder}, page)
         make("UIPadding", {PaddingRight = UDim.new(0, 8)}, page)
@@ -1751,6 +1693,7 @@ local function buildUI()
         b.LayoutOrder = i
         b.TextSize = 11
         b.TextColor3 = C.Muted
+        b.ZIndex = 12
         tabs[t[1]] = b
     end
     
@@ -1768,7 +1711,7 @@ local function buildUI()
     section(mp, "Mode Steal")
     note(mp, "Pilih cara bergerak ke egg:")
     
-    local modeFrame = make("Frame", {Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1, LayoutOrder = nextOrder()}, mp)
+    local modeFrame = make("Frame", {Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1, LayoutOrder = nextOrder(), ZIndex = 12}, mp)
     
     local tweenBtn = btn(modeFrame, "Tween", C.AccentDark, 36)
     tweenBtn.Size = UDim2.new(0.5, -4, 1, 0)
@@ -1804,14 +1747,14 @@ local function buildUI()
     local detectedLabel = make("TextLabel", {
         Size = UDim2.new(1, 0, 0, 20), BackgroundTransparency = 1,
         TextColor3 = C.Accent, Font = Enum.Font.GothamBold, TextSize = 12,
-        TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = nextOrder(),
+        TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = nextOrder(), ZIndex = 12,
     }, mp)
     table.insert(paints, function()
         detectedLabel.Text = string.format("Egg terdeteksi: %d", S.detectedEggs)
     end)
     
     section(mp, "Safe Zone")
-    local zr = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, LayoutOrder = nextOrder()}, mp)
+    local zr = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, LayoutOrder = nextOrder(), ZIndex = 12}, mp)
     
     local zoneBtn = btn(zr, "Set Safe Zone", C.AccentDark, 34)
     zoneBtn.Size = UDim2.new(0.5, -4, 1, 0)
@@ -1873,7 +1816,7 @@ local function buildUI()
     section(mp, "Config")
     switch(mp, "Auto Save", "AutoSave")
     
-    local cr = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, LayoutOrder = nextOrder()}, mp)
+    local cr = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, LayoutOrder = nextOrder(), ZIndex = 12}, mp)
     local saveBtn = btn(cr, "Simpan", C.AccentDark, 34)
     saveBtn.Size = UDim2.new(0.5, -4, 1, 0)
     saveBtn.TextColor3 = C.Text
@@ -1917,7 +1860,7 @@ local function buildUI()
     note(ep, "Egg yang tidak dicentang tidak di-steal.")
     
     local searchFrame = make("Frame", {
-        Size = UDim2.new(1, 0, 0, 36), BackgroundColor3 = C.Card, BorderSizePixel = 0, LayoutOrder = nextOrder(),
+        Size = UDim2.new(1, 0, 0, 36), BackgroundColor3 = C.Card, BorderSizePixel = 0, LayoutOrder = nextOrder(), ZIndex = 12,
     }, ep)
     corner(searchFrame, 10)
     make("UIStroke", {Color = C.PinkBorder, Transparency = 0.7, Thickness = 1}, searchFrame)
@@ -1926,7 +1869,7 @@ local function buildUI()
         Size = UDim2.new(1, -20, 0, 28), Position = UDim2.fromOffset(10, 4), BackgroundColor3 = C.Row, BorderSizePixel = 0,
         Text = "", PlaceholderText = "🔍 Cari egg...", PlaceholderColor3 = C.Muted,
         TextColor3 = C.Text, Font = Enum.Font.Gotham, TextSize = 12, ClearTextOnFocus = false,
-        TextXAlignment = Enum.TextXAlignment.Left,
+        TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 12,
     }, searchFrame)
     corner(searchBox, 8)
     make("UIPadding", {PaddingLeft = UDim.new(0, 10)}, searchBox)
@@ -1950,6 +1893,7 @@ local function buildUI()
                     BackgroundColor3 = C.Card,
                     BorderSizePixel = 0,
                     LayoutOrder = nextOrder(),
+                    ZIndex = 12,
                 }, ep)
                 corner(row, 8)
                 row:SetAttribute("FilteredEgg", true)
@@ -1978,7 +1922,7 @@ local function buildUI()
         end
     end
     
-    local btnFrame = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, LayoutOrder = nextOrder()}, ep)
+    local btnFrame = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, LayoutOrder = nextOrder(), ZIndex = 12}, ep)
     local allBtn = btn(btnFrame, "Pilih Semua", C.AccentDark, 34)
     allBtn.Size = UDim2.new(0.5, -4, 1, 0)
     allBtn.TextColor3 = C.Text
@@ -2002,7 +1946,7 @@ local function buildUI()
         refresh()
     end)
     
-    local minFrame = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, LayoutOrder = nextOrder()}, ep)
+    local minFrame = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, LayoutOrder = nextOrder(), ZIndex = 12}, ep)
     local minBtn = btn(minFrame, "", C.Row, 34)
     minBtn.Size = UDim2.new(1, 0, 1, 0)
     minBtn.TextColor3 = C.Accent
@@ -2060,7 +2004,7 @@ local function buildUI()
     local lowInfo = make("TextLabel", {
         Size = UDim2.new(1, 0, 0, 20), BackgroundTransparency = 1,
         TextColor3 = C.Muted, Font = Enum.Font.Gotham, TextSize = 11,
-        TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = nextOrder(),
+        TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = nextOrder(), ZIndex = 12,
     }, gp)
     table.insert(paints, function()
         lowInfo.Text = string.format("Objek: %d | Error: %d | Antrian: %d", S.low, S.lowErr, #low.queue)
@@ -2097,38 +2041,43 @@ local function buildUI()
         statusLbl.Text = string.format("%s | Egg: %d | Config: %s", S.status, S.detectedEggs, S.config)
     end)
     
-    -- ===== FIXED LOGO BUTTON =====
-    -- Create logo button with proper ZIndex and visibility
+    -- ===== FIXED LOGO BUTTON (BAGUS) =====
     local logo = make("TextButton", {
         AnchorPoint = Vector2.new(0.5, 0.5), 
-        Size = UDim2.fromOffset(52, 52),
-        BackgroundColor3 = C.AccentDark,  -- Set background to accent color
+        Size = UDim2.fromOffset(60, 60),
+        BackgroundColor3 = C.AccentDark,
         BorderSizePixel = 0, 
         AutoButtonColor = false, 
         Visible = false,
         Text = "", 
         ZIndex = 999,
     }, gui)
-    corner(logo, 26)
-    make("UIStroke", {Color = C.Accent, Thickness = 2}, logo)
+    corner(logo, 30)
+    make("UIStroke", {Color = C.Accent, Thickness = 3}, logo)
     
-    -- Create logo inside button with proper ZIndex
-    local logoInner = createLogo(logo, 44)
-    logoInner.Position = UDim2.new(0.5, -22, 0.5, -22)
-    logoInner.ZIndex = 998
+    -- Create logo with effects
+    local logoInner = createLogo(logo, 50)
+    logoInner.Position = UDim2.new(0.5, -25, 0.5, -25)
+    logoInner.ZIndex = 1000
     
-    -- Add "KH" text directly to the button as fallback
-    local khText = make("TextLabel", {
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundTransparency = 1,
-        Text = "KH",
-        TextColor3 = C.Text,
-        Font = Enum.Font.GothamBold,
-        TextSize = 20,
-        TextStrokeTransparency = 0,
-        TextStrokeColor3 = C.HotPink,
-        ZIndex = 1000,
+    -- Add glow effect
+    local glowEffect = make("UIStroke", {
+        Color = C.HotPink,
+        Thickness = 2,
+        Transparency = 0.5,
     }, logo)
+    
+    -- Add pulsing animation
+    task.spawn(function()
+        local t = 0
+        while logo.Parent do
+            t += 0.05
+            local scale = 1 + math.sin(t * 2) * 0.08
+            logo.Size = UDim2.fromOffset(60 * scale, 60 * scale)
+            glowEffect.Transparency = 0.3 + math.sin(t * 3) * 0.3
+            task.wait(0.05)
+        end
+    end)
     
     uiRefs.logo = logo
     
@@ -2138,11 +2087,9 @@ local function buildUI()
         logo.Visible = not open
         
         if open then
-            -- Menu is open, logo is hidden
             logo.ZIndex = 1
             main.ZIndex = 10
         else
-            -- Menu is hidden, logo is visible and on top
             logo.ZIndex = 999
             main.ZIndex = 1
         end
@@ -2167,17 +2114,16 @@ local function buildUI()
         end)
     end
     
-    -- FIXED: Use Activated event for more reliable click detection
+    -- FIXED: Use Activated event
     hideBtn.Activated:Connect(function()
         setMenu(false)
     end)
     
-    -- FIXED: Logo click using Activated
     logo.Activated:Connect(function()
         setMenu(true)
     end)
     
-    -- FIXED: Drag for logo - use InputBegan/InputEnded properly
+    -- FIXED: Drag for logo
     drag(logo,
         function() return layout.logo end,
         function(x, y)
@@ -2225,7 +2171,7 @@ end
 task.wait(1)
 showWelcomePopup()
 
--- FIXED: Input handling for shortcuts
+-- FIXED: Input handling
 UIS.InputBegan:Connect(function(input, gameProcessed)
     lastActive = os.clock()
     if gameProcessed then
@@ -2316,4 +2262,4 @@ loop("autosave", 3, function()
 end)
 loop("ui", 0.4, refresh)
 
-notify("kayeshiHUB v2.2 aktif. K = menu, F = auto steal.")
+notify("kayeshiHUB v2.3 aktif. K = menu, F = auto steal.")
