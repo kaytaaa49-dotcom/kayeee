@@ -1,4 +1,4 @@
--- kayeshiHUB v2.3 - Dark Pink Premium Edition (Ultimate Fixed)
+-- kayeshiHUB v2.3 - Dark Pink Premium Edition (ULTIMATE FIXED)
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local StarterGui = game:GetService("StarterGui")
@@ -72,49 +72,11 @@ local EGG_LIST = {
     {"Golem Egg", "Unknown"},
 }
 
--- Alias database
-local EGG_ALIASES = {
-    ["common"] = "common egg",
-    ["coral"] = "coral egg",
-    ["reef"] = "reef egg",
-    ["tidal"] = "tidal egg",
-    ["deep"] = "deep egg",
-    ["abyss"] = "abyss egg",
-    ["trench"] = "trench egg",
-    ["sovereign"] = "sovereign egg",
-    ["celestial"] = "celestial egg",
-    ["eternal"] = "eternal egg",
-    ["coral reef"] = "coral reef egg",
-    ["glacial spiral"] = "glacial spiral egg",
-    ["amethyst spiral"] = "amethyst spiral egg",
-    ["azure crown"] = "azure crown egg",
-    ["solar orbit"] = "solar orbit egg",
-    ["spikey"] = "spikey egg",
-    ["mamba"] = "mamba egg",
-    ["inferno"] = "inferno egg",
-    ["prism"] = "prism egg",
-    ["astral vortex"] = "astral vortex",
-    ["damumu"] = "damumu egg",
-    ["eclipse"] = "eclipse egg",
-    ["admin abuse seraph"] = "admin abuse seraph egg",
-    ["kraken glory"] = "kraken glory egg",
-    ["kingkalolo"] = "kingkalolo egg",
-    ["king kolo"] = "kingkalolo egg",
-    ["golem"] = "golem egg",
-}
-
 local EGG, EGG_KEYS = {}, {}
 for i, e in ipairs(EGG_LIST) do
     local key = string.lower(e[1])
     EGG[key] = {name = e[1], luck = e[2], rank = i, key = key}
     table.insert(EGG_KEYS, key)
-end
-
-for alias, real in pairs(EGG_ALIASES) do
-    if not EGG[alias] and EGG[real] then
-        EGG[alias] = EGG[real]
-        table.insert(EGG_KEYS, alias)
-    end
 end
 
 table.sort(EGG_KEYS, function(a, b)
@@ -123,10 +85,10 @@ end)
 
 local MIN_STEPS = {
     {"Semua", 0},
-    {"Sovereign+", EGG["sovereign egg"].rank},
-    {"Celestial+", EGG["celestial egg"].rank},
-    {"Kraken+", EGG["kraken glory egg"].rank},
-    {"Golem+", EGG["golem egg"].rank},
+    {"Sovereign+", 8},
+    {"Celestial+", 9},
+    {"Kraken+", 24},
+    {"Golem+", 26},
 }
 
 -- ===== KONSTANTA DETEKSI =====
@@ -134,10 +96,6 @@ local BAD_NAME = {"hatch", "place", "plant", "incubat", "inventor", "shop", "mac
 local BAD_ANCESTOR = {"hatch", "place", "plant", "incubat", "machine", "shop", "npc", "display", "showcase", "inventory", "mudagen", "mudargen", "reward", "merchant", "vendor", "shopkeeper", "trader"}
 local BAD_PROMPT = {"inventory", "place", "plant", "incubat", "hatch", "shop", "buy", "sell", "tukar", "merchant", "vendor"}
 local BAD_CHAIN = {"generator", "shop", "npc", "citadel", "merchant", "tukar", "swap", "event", "halloween", "pumpkins", "vendor", "shopkeeper", "trader"}
-local LOW_OFF = {
-    ParticleEmitter = true, Trail = true, Beam = true, Smoke = true, Fire = true, Sparkles = true,
-    PointLight = true, SpotLight = true, SurfaceLight = true, Clouds = true,
-}
 
 -- ===== CONFIG =====
 local CFG = {
@@ -159,20 +117,16 @@ end
 local idx = {egg = {}, prompt = {}, trail = {}}
 local eggSel, espSel = {}, {}
 local visuals, ignored, cooldown, waterCache = {}, {}, {}, {}
-local machCache, machAt = {}, 0
 local S = {status = "Memuat...", steal = 0, inv = 0, errors = 0, config = "-", held = "-", low = 0, lowErr = 0, detectedEggs = 0}
 local zone
 local busy = false
 local paints, uiRefs = {}, {}
 local layout = {main = Vector2.new(0, 0), logo = Vector2.new(0, 0), ready = false}
-local orderSeq = 0
 local lastActive = os.clock()
 local baseWalk, baseJump = 16, 50
 local nextInv = 0
 local invFails = 0
-local lastJson
 local minIdx = 1
-local eggSearchQuery = ""
 local welcomeShown = false
 
 -- ===== UTILITY FUNCTIONS =====
@@ -180,11 +134,6 @@ local function refresh()
     for _, f in ipairs(paints) do
         pcall(f)
     end
-end
-
-local function nextOrder()
-    orderSeq += 1
-    return orderSeq
 end
 
 local function getRoot()
@@ -243,32 +192,18 @@ local function chainOf(inst)
     return table.concat(names, " / ")
 end
 
--- ===== IMPROVED EGG DETECTION =====
+-- ===== EGG DETECTION =====
 local function eggOf(text)
     if not text then return nil end
     local l = string.lower(text or "")
     
-    -- Direct match
     if EGG[l] then
         return EGG[l]
     end
     
-    -- Alias match
-    if EGG_ALIASES[l] and EGG[EGG_ALIASES[l]] then
-        return EGG[EGG_ALIASES[l]]
-    end
-    
-    -- Partial match
     for _, k in ipairs(EGG_KEYS) do
         if string.find(l, k, 1, true) then
             return EGG[k]
-        end
-    end
-    
-    -- Fuzzy match
-    for _, eggData in pairs(EGG) do
-        if eggData.name and string.find(l, string.lower(eggData.name), 1, true) then
-            return eggData
         end
     end
     
@@ -321,7 +256,6 @@ local function clearVisuals()
     end
 end
 
--- ===== IMPROVED kindOf =====
 local function kindOf(obj)
     if obj:IsA("ProximityPrompt") then
         return "prompt"
@@ -332,40 +266,23 @@ local function kindOf(obj)
     
     local n = string.lower(obj.Name)
     
-    -- Trail shop check
     if n == "trail shop" or n == "trailshop" or n == "trail" then
         return "trail"
     end
     
-    -- Egg detection
     local eggInfo = eggOf(obj.Name)
     if eggInfo then
-        -- Skip if name contains bad words
         if hasAny(n, BAD_NAME) then
             return nil
         end
-        
-        -- Skip if parent is bad
         if obj.Parent and hasAny(string.lower(obj.Parent.Name), BAD_ANCESTOR) then
             return nil
         end
-        
-        -- Check chain
         local chain = chainOf(obj)
         if hasAny(chain, BAD_ANCESTOR) then
             return nil
         end
-        
         return "egg"
-    end
-    
-    -- Check if name contains "egg" and matches known egg
-    if string.find(n, "egg", 1, true) and not hasAny(n, BAD_NAME) then
-        for _, eggData in pairs(EGG) do
-            if eggData.name and string.find(n, string.lower(eggData.name):gsub(" ", ""), 1, true) then
-                return "egg"
-            end
-        end
     end
     
     return nil
@@ -385,7 +302,6 @@ local function untrack(obj)
     dropVisual(obj)
 end
 
--- Initial scan
 for _, d in ipairs(workspace:GetDescendants()) do
     track(d)
 end
@@ -477,7 +393,7 @@ local function waitFor(pred, secs)
     return pred() and true or false
 end
 
--- ===== INVENTORY FUNCTIONS =====
+-- ===== INVENTORY =====
 local function eggsIn(c, out)
     if c then
         for _, x in ipairs(c:GetChildren()) do
@@ -535,7 +451,7 @@ local function backToSafe()
     end
 end
 
--- ===== IMPROVED pickEgg =====
+-- ===== PICK EGG =====
 local function pickEgg()
     local r = getRoot()
     if not r then
@@ -556,13 +472,10 @@ local function pickEgg()
             if info and part then
                 local dist = (part.Position - r.Position).Magnitude
                 
-                -- Check detection radius
                 if dist <= detectionRadius then
                     eggCount = eggCount + 1
                     
-                    -- Check if egg is selected in filter
                     if selOn(eggSel, info.key) and info.rank >= CFG.MinRank then
-                        -- Check ancestor chain - skip if in bad area
                         local chain = chainOf(obj)
                         if not hasAny(chain, BAD_ANCESTOR) then
                             validEggCount = validEggCount + 1
@@ -585,10 +498,8 @@ local function pickEgg()
         end
     end
     
-    -- Update detected egg count
     S.detectedEggs = eggCount
     
-    -- Update status
     if eggCount > 0 and not best then
         if validEggCount > 0 then
             S.status = string.format("%d egg valid, tapi tidak cocok dengan filter", validEggCount)
@@ -602,7 +513,7 @@ local function pickEgg()
     return best
 end
 
--- ===== STEAL FUNCTION =====
+-- ===== STEAL =====
 local function steal(e)
     local before = totalEggs()
     for _ = 1, 2 do
@@ -611,7 +522,6 @@ local function steal(e)
         end
         streamAround(e.part.Position)
         
-        -- Move to egg based on mode
         if CFG.StealMode == "Tween" then
             tweenTo(e.part.Position)
         else
@@ -920,7 +830,7 @@ local function lowApply(d)
         return
     end
     local ok = pcall(function()
-        if d:IsA("PostEffect") or LOW_OFF[d.ClassName] then
+        if d:IsA("PostEffect") or d:IsA("ParticleEmitter") or d:IsA("Trail") or d:IsA("Beam") or d:IsA("Smoke") or d:IsA("Fire") or d:IsA("Sparkles") or d:IsA("PointLight") or d:IsA("SpotLight") or d:IsA("SurfaceLight") or d:IsA("Clouds") then
             setLow(d, "Enabled", false)
         elseif d:IsA("Atmosphere") then
             setLow(d, "Density", 0)
@@ -1152,7 +1062,7 @@ local function section(page, text)
     make("TextLabel", {
         Size = UDim2.new(1, 0, 0, 20), BackgroundTransparency = 1, Text = string.upper(text),
         TextColor3 = C.Accent, Font = Enum.Font.GothamBold, TextSize = 11,
-        TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = nextOrder(),
+        TextXAlignment = Enum.TextXAlignment.Left,
     }, page)
 end
 
@@ -1161,18 +1071,16 @@ local function note(page, text)
         Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1,
         TextWrapped = true, Text = text, TextColor3 = C.Muted, Font = Enum.Font.Gotham, TextSize = 11,
         TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
-        LayoutOrder = nextOrder(),
     }, page)
 end
 
--- ===== MODERN TOGGLE =====
+-- ===== SIMPLE TOGGLE =====
 local function switch(page, label, key, onChange)
     local row = make("TextButton", {
         Size = UDim2.new(1, 0, 0, 36), BackgroundColor3 = C.Card, BorderSizePixel = 0,
-        AutoButtonColor = false, Text = "", LayoutOrder = nextOrder(),
+        AutoButtonColor = false, Text = "", 
     }, page)
     corner(row, 10)
-    
     make("UIStroke", {Color = C.PinkBorder, Transparency = 0.8, Thickness = 1}, row)
     
     make("TextLabel", {
@@ -1209,13 +1117,12 @@ local function switch(page, label, key, onChange)
     end)
 end
 
--- ===== MODERN STEPPER =====
+-- ===== SIMPLE STEPPER =====
 local function stepper(page, label, key, step, lo, hi)
     local r = make("Frame", {
-        Size = UDim2.new(1, 0, 0, 36), BackgroundColor3 = C.Card, BorderSizePixel = 0, LayoutOrder = nextOrder(),
+        Size = UDim2.new(1, 0, 0, 36), BackgroundColor3 = C.Card, BorderSizePixel = 0,
     }, page)
     corner(r, 10)
-    
     make("UIStroke", {Color = C.PinkBorder, Transparency = 0.8, Thickness = 1}, r)
     
     make("TextLabel", {
@@ -1253,15 +1160,13 @@ local function stepper(page, label, key, step, lo, hi)
     end)
 end
 
--- ===== MODERN EGG ROW =====
+-- ===== SIMPLE EGG ROW =====
 local function eggRow(page, sel, e)
     local key = string.lower(e[1])
     local b = btn(page, "", C.Row, 30)
-    b.LayoutOrder = nextOrder()
     b.Font = Enum.Font.Gotham
     b.TextSize = 11
     b.TextXAlignment = Enum.TextXAlignment.Left
-    
     make("UIPadding", {PaddingLeft = UDim.new(0, 12)}, b)
     
     table.insert(paints, function()
@@ -1277,53 +1182,40 @@ local function eggRow(page, sel, e)
     end)
 end
 
--- ===== MODERN EGG LIST =====
-local function eggList(page, sel, withMin)
-    local r = make("Frame", {Size = UDim2.new(1, 0, 0, 32), BackgroundTransparency = 1, LayoutOrder = nextOrder()}, page)
+-- ===== LOGO KH =====
+local function createLogo(parent, size)
+    local logoFrame = make("Frame", {
+        Size = UDim2.fromOffset(size, size),
+        BackgroundColor3 = C.AccentDark,
+        BorderSizePixel = 0,
+    }, parent)
+    corner(logoFrame, size * 0.3)
     
-    local all = btn(r, "Pilih semua", C.AccentDark, 32)
-    all.Size = UDim2.new(withMin and 0.34 or 0.5, -4, 1, 0)
-    all.TextColor3 = C.Text
+    make("UIGradient", {
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, C.HotPink),
+            ColorSequenceKeypoint.new(0.5, C.Accent),
+            ColorSequenceKeypoint.new(1, C.AccentDark)
+        }),
+        Rotation = 45,
+    }, logoFrame)
     
-    local none = btn(r, "Kosongkan", C.Row, 32)
-    none.Size = UDim2.new(withMin and 0.33 or 0.5, -4, 1, 0)
-    none.Position = UDim2.new(withMin and 0.34 or 0.5, 4, 0, 0)
-    none.TextColor3 = C.Muted
+    local khText = make("TextLabel", {
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
+        Text = "KH",
+        TextColor3 = C.Text,
+        Font = Enum.Font.GothamBold,
+        TextSize = size * 0.4,
+        TextStrokeTransparency = 0,
+        TextStrokeColor3 = C.HotPink,
+        ZIndex = 2,
+        TextScaled = true,
+    }, logoFrame)
     
-    all.MouseButton1Click:Connect(function()
-        for _, e in ipairs(EGG_LIST) do
-            sel[string.lower(e[1])] = true
-        end
-        refresh()
-    end)
+    make("UIStroke", {Color = C.Accent, Thickness = 2, Transparency = 0.3}, logoFrame)
     
-    none.MouseButton1Click:Connect(function()
-        for _, e in ipairs(EGG_LIST) do
-            sel[string.lower(e[1])] = false
-        end
-        refresh()
-    end)
-    
-    if withMin then
-        local minB = btn(r, "", C.Row, 32)
-        minB.Size = UDim2.new(0.33, -4, 1, 0)
-        minB.Position = UDim2.new(0.67, 4, 0, 0)
-        minB.TextColor3 = C.Accent
-        
-        minB.MouseButton1Click:Connect(function()
-            minIdx = minIdx % #MIN_STEPS + 1
-            CFG.MinRank = MIN_STEPS[minIdx][2]
-            refresh()
-        end)
-        
-        table.insert(paints, function()
-            minB.Text = "Min: " .. MIN_STEPS[minIdx][1]
-        end)
-    end
-    
-    for _, e in ipairs(EGG_LIST) do
-        eggRow(page, sel, e)
-    end
+    return logoFrame
 end
 
 -- ===== VIEWPORT & LAYOUT =====
@@ -1408,185 +1300,6 @@ local function copyLink(url)
     end)
 end
 
--- ===== LOGO KH ANIMATED (FIXED) =====
-local function createLogo(parent, size)
-    local logoFrame = make("Frame", {
-        Size = UDim2.fromOffset(size, size),
-        BackgroundColor3 = C.AccentDark,
-        BorderSizePixel = 0,
-    }, parent)
-    corner(logoFrame, size * 0.3)
-    
-    -- Gradient
-    local gradient = make("UIGradient", {
-        Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, C.HotPink),
-            ColorSequenceKeypoint.new(0.5, C.Accent),
-            ColorSequenceKeypoint.new(1, C.AccentDark)
-        }),
-        Rotation = 45,
-    }, logoFrame)
-    
-    -- Gloss effect
-    local gloss = make("Frame", {
-        Size = UDim2.new(1, 0, 0.5, 0),
-        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-        BackgroundTransparency = 0.8,
-        BorderSizePixel = 0,
-    }, logoFrame)
-    corner(gloss, size * 0.3)
-    
-    -- KH Text (FIXED: Ensure text is visible)
-    local khText = make("TextLabel", {
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundTransparency = 1,
-        Text = "KH",
-        TextColor3 = C.Text,
-        Font = Enum.Font.GothamBold,
-        TextSize = size * 0.4,
-        TextStrokeTransparency = 0,
-        TextStrokeColor3 = C.HotPink,
-        ZIndex = 2,
-        TextScaled = true, -- FIXED: Add TextScaled for better fit
-    }, logoFrame)
-    
-    -- Glow effect
-    local glow = make("UIStroke", {
-        Color = C.Accent,
-        Thickness = 2,
-        Transparency = 0.3,
-    }, logoFrame)
-    
-    -- Animation loop
-    task.spawn(function()
-        local t = 0
-        while logoFrame.Parent do
-            t += 0.05
-            
-            local scale = 1 + math.sin(t * 2) * 0.05
-            logoFrame.Size = UDim2.fromOffset(size * scale, size * scale)
-            
-            glow.Transparency = 0.3 + math.sin(t * 3) * 0.2
-            
-            gloss.BackgroundTransparency = 0.7 + math.sin(t * 4) * 0.3
-            
-            task.wait(0.05)
-        end
-    end)
-    
-    return logoFrame
-end
-
--- ===== WELCOME POPUP =====
-local function showWelcomePopup()
-    if welcomeShown then
-        return
-    end
-    welcomeShown = true
-    
-    local host = player:WaitForChild("PlayerGui")
-    local okH, hui = pcall(gethui)
-    if okH and typeof(hui) == "Instance" then
-        host = hui
-    end
-    
-    local popupGui = make("ScreenGui", {
-        Name = "kayeshiHUB_Welcome",
-        ResetOnSpawn = false,
-        DisplayOrder = 1000,
-        IgnoreGuiInset = true,
-    }, host)
-    
-    local overlay = make("Frame", {
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-        BackgroundTransparency = 0.7,
-        BorderSizePixel = 0,
-    }, popupGui)
-    
-    local popup = make("Frame", {
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        Position = UDim2.new(0.5, 0, 0.5, 0),
-        Size = UDim2.fromOffset(400, 450),
-        BackgroundColor3 = C.Panel,
-        BorderSizePixel = 0,
-    }, overlay)
-    corner(popup, 16)
-    make("UIStroke", {Color = C.PinkBorder, Transparency = 0.5, Thickness = 2}, popup)
-    
-    local closeBtn = make("TextButton", {
-        Size = UDim2.fromOffset(30, 30),
-        Position = UDim2.new(1, -35, 0, 10),
-        BackgroundColor3 = C.Row,
-        Text = "✕",
-        TextColor3 = C.Muted,
-        Font = Enum.Font.GothamSemibold,
-        TextSize = 16,
-        BorderSizePixel = 0,
-        AutoButtonColor = false,
-    }, popup)
-    corner(closeBtn, 15)
-    
-    closeBtn.MouseButton1Click:Connect(function()
-        popupGui:Destroy()
-    end)
-    
-    local logo = createLogo(popup, 80)
-    logo.Position = UDim2.new(0.5, -40, 0, 30)
-    
-    make("TextLabel", {
-        Size = UDim2.new(1, -40, 0, 40),
-        Position = UDim2.new(0, 20, 0, 120),
-        BackgroundTransparency = 1,
-        Text = "Welcome to kayeshiHUB!",
-        TextColor3 = C.Text,
-        Font = Enum.Font.GothamBold,
-        TextSize = 22,
-        TextScaled = true,
-    }, popup)
-    
-    make("TextLabel", {
-        Size = UDim2.new(1, -40, 0, 80),
-        Position = UDim2.new(0, 20, 0, 170),
-        BackgroundTransparency = 1,
-        Text = "v2.3 Dark Pink Premium Edition\nAuto Steal lebih pintar\nUI lebih clean & modern",
-        TextColor3 = C.Muted,
-        Font = Enum.Font.Gotham,
-        TextSize = 14,
-        TextWrapped = true,
-    }, popup)
-    
-    local waBtn = btn(popup, "Join WhatsApp", C.AccentDark, 40)
-    waBtn.Position = UDim2.new(0.5, -170, 0, 280)
-    waBtn.Size = UDim2.fromOffset(340, 40)
-    waBtn.TextColor3 = C.Text
-    
-    waBtn.MouseButton1Click:Connect(function()
-        copyLink(WHATSAPP)
-        notify("Link WhatsApp disalin")
-    end)
-    
-    local dcBtn = btn(popup, "Join Discord", C.Row, 40)
-    dcBtn.Position = UDim2.new(0.5, -170, 0, 330)
-    dcBtn.Size = UDim2.fromOffset(340, 40)
-    dcBtn.TextColor3 = C.Accent
-    
-    dcBtn.MouseButton1Click:Connect(function()
-        copyLink(DISCORD)
-        notify("Link Discord disalin")
-    end)
-    
-    make("TextLabel", {
-        Size = UDim2.new(1, -40, 0, 30),
-        Position = UDim2.new(0, 20, 0, 390),
-        BackgroundTransparency = 1,
-        Text = "kayeshiHUB v2.3",
-        TextColor3 = C.Muted,
-        Font = Enum.Font.Gotham,
-        TextSize = 12,
-    }, popup)
-end
-
 -- ===== BUILD UI =====
 local function buildUI()
     local host = player:WaitForChild("PlayerGui")
@@ -1632,7 +1345,6 @@ local function buildUI()
         TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 12,
     }, header)
     
-    -- Hide button
     local hideBtn = btn(header, "Hide", C.AccentDark, 28)
     hideBtn.Size = UDim2.fromOffset(88, 28)
     hideBtn.Position = UDim2.new(1, -98, 0, 12)
@@ -1648,7 +1360,6 @@ local function buildUI()
     corner(side, 12)
     make("UIStroke", {Color = C.PinkBorder, Transparency = 0.7, Thickness = 1}, side)
     make("UIPadding", {PaddingTop = UDim.new(0, 8), PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8)}, side)
-    make("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder}, side)
     
     -- Content Area
     local content = make("Frame", {
@@ -1681,9 +1392,8 @@ local function buildUI()
         local page = make("ScrollingFrame", {
             Position = UDim2.fromOffset(8, 8), Size = UDim2.new(1, -16, 1, -16), BackgroundTransparency = 1,
             BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = C.Muted,
-            CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, Visible = false, ZIndex = 12,
+            CanvasSize = UDim2.new(0, 0), Visible = false, ZIndex = 12,
         }, content)
-        make("UIListLayout", {Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder}, page)
         make("UIPadding", {PaddingRight = UDim.new(0, 8)}, page)
         pages[t[1]] = page
         
@@ -1705,11 +1415,10 @@ local function buildUI()
     switch(mp, "Rarity tertinggi dulu", "RarityFirst")
     stepper(mp, "Tunggu prompt (detik)", "StealWait", 0.1, 0.5, 3)
     
-    -- Steal Mode Selection
+    -- Steal Mode
     section(mp, "Mode Steal")
-    note(mp, "Pilih cara bergerak ke egg:")
     
-    local modeFrame = make("Frame", {Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1, LayoutOrder = nextOrder(), ZIndex = 12}, mp)
+    local modeFrame = make("Frame", {Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1}, mp)
     
     local tweenBtn = btn(modeFrame, "Tween", C.AccentDark, 36)
     tweenBtn.Size = UDim2.new(0.5, -4, 1, 0)
@@ -1740,19 +1449,19 @@ local function buildUI()
     
     section(mp, "Detection Radius")
     stepper(mp, "Radius deteksi egg", "DetectionRadius", 50, 100, 1000)
-    stepper(mp, "Radius tampilan ESP", "ESPRadius", 50, 100, 1000)
+    stepper(mp, "Radius ESP", "ESPRadius", 50, 100, 1000)
     
     local detectedLabel = make("TextLabel", {
         Size = UDim2.new(1, 0, 0, 20), BackgroundTransparency = 1,
         TextColor3 = C.Accent, Font = Enum.Font.GothamBold, TextSize = 12,
-        TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = nextOrder(), ZIndex = 12,
+        TextXAlignment = Enum.TextXAlignment.Left,
     }, mp)
     table.insert(paints, function()
         detectedLabel.Text = string.format("Egg terdeteksi: %d", S.detectedEggs)
     end)
     
     section(mp, "Safe Zone")
-    local zr = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, LayoutOrder = nextOrder(), ZIndex = 12}, mp)
+    local zr = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1}, mp)
     
     local zoneBtn = btn(zr, "Set Safe Zone", C.AccentDark, 34)
     zoneBtn.Size = UDim2.new(0.5, -4, 1, 0)
@@ -1814,7 +1523,7 @@ local function buildUI()
     section(mp, "Config")
     switch(mp, "Auto Save", "AutoSave")
     
-    local cr = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, LayoutOrder = nextOrder(), ZIndex = 12}, mp)
+    local cr = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1}, mp)
     local saveBtn = btn(cr, "Simpan", C.AccentDark, 34)
     saveBtn.Size = UDim2.new(0.5, -4, 1, 0)
     saveBtn.TextColor3 = C.Text
@@ -1834,7 +1543,6 @@ local function buildUI()
     end)
     
     local resetBtn = btn(mp, "Reset ke Default", C.Row, 34)
-    resetBtn.LayoutOrder = nextOrder()
     resetBtn.TextColor3 = C.Warning
     resetBtn.MouseButton1Click:Connect(function()
         for k, v in pairs(DEFAULT) do
@@ -1857,70 +1565,7 @@ local function buildUI()
     section(ep, "Filter Egg")
     note(ep, "Egg yang tidak dicentang tidak di-steal.")
     
-    local searchFrame = make("Frame", {
-        Size = UDim2.new(1, 0, 0, 36), BackgroundColor3 = C.Card, BorderSizePixel = 0, LayoutOrder = nextOrder(), ZIndex = 12,
-    }, ep)
-    corner(searchFrame, 10)
-    make("UIStroke", {Color = C.PinkBorder, Transparency = 0.7, Thickness = 1}, searchFrame)
-    
-    local searchBox = make("TextBox", {
-        Size = UDim2.new(1, -20, 0, 28), Position = UDim2.fromOffset(10, 4), BackgroundColor3 = C.Row, BorderSizePixel = 0,
-        Text = "", PlaceholderText = "🔍 Cari egg...", PlaceholderColor3 = C.Muted,
-        TextColor3 = C.Text, Font = Enum.Font.Gotham, TextSize = 12, ClearTextOnFocus = false,
-        TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 12,
-    }, searchFrame)
-    corner(searchBox, 8)
-    make("UIPadding", {PaddingLeft = UDim.new(0, 10)}, searchBox)
-    
-    searchBox.FocusLost:Connect(function()
-        eggSearchQuery = string.lower(searchBox.Text or "")
-        refresh()
-    end)
-    
-    local function createFilteredEggList()
-        for _, child in ipairs(ep:GetChildren()) do
-            if child:GetAttribute("FilteredEgg") then
-                child:Destroy()
-            end
-        end
-        
-        for _, e in ipairs(EGG_LIST) do
-            if eggSearchQuery == "" or string.find(string.lower(e[1]), eggSearchQuery, 1, true) then
-                local row = make("Frame", {
-                    Size = UDim2.new(1, 0, 0, 30),
-                    BackgroundColor3 = C.Card,
-                    BorderSizePixel = 0,
-                    LayoutOrder = nextOrder(),
-                    ZIndex = 12,
-                }, ep)
-                corner(row, 8)
-                row:SetAttribute("FilteredEgg", true)
-                
-                local b = btn(row, "", C.Row, 28)
-                b.Size = UDim2.new(1, -10, 0, 28)
-                b.Position = UDim2.fromOffset(5, 1)
-                b.Font = Enum.Font.Gotham
-                b.TextSize = 11
-                b.TextXAlignment = Enum.TextXAlignment.Left
-                make("UIPadding", {PaddingLeft = UDim.new(0, 8)}, b)
-                
-                local key = string.lower(e[1])
-                table.insert(paints, function()
-                    local on = selOn(eggSel, key)
-                    b.Text = (on and "●  " or "○  ") .. e[1] .. "   |   Luck " .. e[2]
-                    b.BackgroundColor3 = on and C.AccentDark or C.Row
-                    b.TextColor3 = on and C.Text or C.Muted
-                end)
-                
-                b.MouseButton1Click:Connect(function()
-                    eggSel[key] = not selOn(eggSel, key)
-                    refresh()
-                end)
-            end
-        end
-    end
-    
-    local btnFrame = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, LayoutOrder = nextOrder(), ZIndex = 12}, ep)
+    local btnFrame = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1}, ep)
     local allBtn = btn(btnFrame, "Pilih Semua", C.AccentDark, 34)
     allBtn.Size = UDim2.new(0.5, -4, 1, 0)
     allBtn.TextColor3 = C.Text
@@ -1944,7 +1589,7 @@ local function buildUI()
         refresh()
     end)
     
-    local minFrame = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, LayoutOrder = nextOrder(), ZIndex = 12}, ep)
+    local minFrame = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1}, ep)
     local minBtn = btn(minFrame, "", C.Row, 34)
     minBtn.Size = UDim2.new(1, 0, 1, 0)
     minBtn.TextColor3 = C.Accent
@@ -1959,7 +1604,9 @@ local function buildUI()
         minBtn.Text = "Min Rank: " .. MIN_STEPS[minIdx][1]
     end)
     
-    createFilteredEggList()
+    for _, e in ipairs(EGG_LIST) do
+        eggRow(ep, eggSel, e)
+    end
     
     -- ===== AUTO TAB =====
     section(ap, "Auto Inventory")
@@ -1978,7 +1625,33 @@ local function buildUI()
     switch(esp, "X-Ray Egg", "XRay")
     
     section(esp, "Filter ESP")
-    eggList(esp, espSel, false)
+    local espBtnFrame = make("Frame", {Size = UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1}, esp)
+    local espAllBtn = btn(espBtnFrame, "Pilih Semua", C.AccentDark, 34)
+    espAllBtn.Size = UDim2.new(0.5, -4, 1, 0)
+    espAllBtn.TextColor3 = C.Text
+    
+    local espNoneBtn = btn(espBtnFrame, "Kosongkan", C.Row, 34)
+    espNoneBtn.Size = UDim2.new(0.5, -4, 1, 0)
+    espNoneBtn.Position = UDim2.new(0.5, 4, 0, 0)
+    espNoneBtn.TextColor3 = C.Muted
+    
+    espAllBtn.MouseButton1Click:Connect(function()
+        for _, e in ipairs(EGG_LIST) do
+            espSel[string.lower(e[1])] = true
+        end
+        refresh()
+    end)
+    
+    espNoneBtn.MouseButton1Click:Connect(function()
+        for _, e in ipairs(EGG_LIST) do
+            espSel[string.lower(e[1])] = false
+        end
+        refresh()
+    end)
+    
+    for _, e in ipairs(EGG_LIST) do
+        eggRow(esp, espSel, e)
+    end
     
     -- ===== GRAFIK TAB =====
     section(gp, "Low Graphics")
@@ -1988,7 +1661,6 @@ local function buildUI()
     end)
     
     local reapply = btn(gp, "Terapkan ulang", C.Row, 34)
-    reapply.LayoutOrder = nextOrder()
     reapply.TextColor3 = C.Accent
     reapply.MouseButton1Click:Connect(function()
         if low.on then
@@ -2002,7 +1674,7 @@ local function buildUI()
     local lowInfo = make("TextLabel", {
         Size = UDim2.new(1, 0, 0, 20), BackgroundTransparency = 1,
         TextColor3 = C.Muted, Font = Enum.Font.Gotham, TextSize = 11,
-        TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = nextOrder(), ZIndex = 12,
+        TextXAlignment = Enum.TextXAlignment.Left,
     }, gp)
     table.insert(paints, function()
         lowInfo.Text = string.format("Objek: %d | Error: %d | Antrian: %d", S.low, S.lowErr, #low.queue)
@@ -2013,7 +1685,6 @@ local function buildUI()
     note(dp, "Info, update, dan saran fitur.")
     
     local discordCopy = btn(dp, "Salin link Discord", C.AccentDark, 36)
-    discordCopy.LayoutOrder = nextOrder()
     discordCopy.TextColor3 = C.Text
     discordCopy.MouseButton1Click:Connect(function()
         local ok = copyLink(DISCORD)
@@ -2025,7 +1696,6 @@ local function buildUI()
     note(dp, "Saluran update terbaru.")
     
     local waCopy = btn(dp, "Salin link WhatsApp", C.AccentDark, 36)
-    waCopy.LayoutOrder = nextOrder()
     waCopy.TextColor3 = C.Text
     waCopy.MouseButton1Click:Connect(function()
         local ok = copyLink(WHATSAPP)
@@ -2039,7 +1709,7 @@ local function buildUI()
         statusLbl.Text = string.format("%s | Egg: %d | Config: %s", S.status, S.detectedEggs, S.config)
     end)
     
-    -- ===== FIXED LOGO BUTTON =====
+    -- ===== LOGO BUTTON =====
     local logo = make("TextButton", {
         AnchorPoint = Vector2.new(0.5, 0.5), 
         Size = UDim2.fromOffset(60, 60),
@@ -2053,44 +1723,16 @@ local function buildUI()
     corner(logo, 30)
     make("UIStroke", {Color = C.Accent, Thickness = 3}, logo)
     
-    -- Create logo with effects (FIXED: Make sure it's visible)
     local logoInner = createLogo(logo, 50)
     logoInner.Position = UDim2.new(0.5, -25, 0.5, -25)
     logoInner.ZIndex = 1000
     
-    -- Add glow effect
-    local glowEffect = make("UIStroke", {
-        Color = C.HotPink,
-        Thickness = 2,
-        Transparency = 0.5,
-    }, logo)
-    
-    -- Add pulsing animation
-    task.spawn(function()
-        local t = 0
-        while logo.Parent do
-            t += 0.05
-            local scale = 1 + math.sin(t * 2) * 0.08
-            logo.Size = UDim2.fromOffset(60 * scale, 60 * scale)
-            glowEffect.Transparency = 0.3 + math.sin(t * 3) * 0.3
-            task.wait(0.05)
-        end
-    end)
-    
     uiRefs.logo = logo
     
-    -- FIXED setMenu function
+    -- setMenu function
     local function setMenu(open)
         main.Visible = open
         logo.Visible = not open
-        
-        if open then
-            logo.ZIndex = 1
-            main.ZIndex = 10
-        else
-            logo.ZIndex = 999
-            main.ZIndex = 1
-        end
         applyLayout()
     end
     uiRefs.setMenu = setMenu
@@ -2112,7 +1754,6 @@ local function buildUI()
         end)
     end
     
-    -- FIXED: Use Activated event for better compatibility
     hideBtn.Activated:Connect(function()
         setMenu(false)
     end)
@@ -2121,7 +1762,6 @@ local function buildUI()
         setMenu(true)
     end)
     
-    -- FIXED: Drag for logo
     drag(logo,
         function() return layout.logo end,
         function(x, y)
@@ -2146,7 +1786,7 @@ local function buildUI()
     refresh()
     applyLayout()
     
-    -- FIXED: Show menu by default
+    -- Show menu by default
     main.Visible = true
     logo.Visible = false
 end
@@ -2168,10 +1808,6 @@ if not okUI then
     warn("kayeshiHUB menu: " .. tostring(errUI))
     notify("Menu gagal: " .. string.sub(tostring(errUI), 1, 150))
 end
-
--- Show welcome popup
-task.wait(1)
-showWelcomePopup()
 
 -- FIXED: Input handling
 UIS.InputBegan:Connect(function(input, gameProcessed)
