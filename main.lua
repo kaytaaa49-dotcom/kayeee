@@ -1,4 +1,4 @@
--- kayeshiHUB v2.2 - FUCK, YATIM LU ANJG
+-- kayeshiHUB v2.1 - FUCK, YATIM LO BGST
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local StarterGui = game:GetService("StarterGui")
@@ -21,7 +21,7 @@ local function notify(text)
     end)
 end
 
-notify("kayeshiHUB v2.2 memuat...")
+notify("kayeshiHUB v2.1 memuat...")
 
 -- ===== THEME DARK PINK =====
 local C = {
@@ -453,11 +453,11 @@ local function isInPlaceArea(obj)
     
     local pos = part.Position
     
-    -- Check proximity to place machines
+    -- Check proximity to place machines (but only if the egg is VERY close)
     for p in pairs(idx.prompt) do
         if p:IsDescendantOf(workspace) and hasAny(textOf(p), PLACE_AREA_WORDS) then
             local pp = promptPos(p)
-            if pp and (pp - pos).Magnitude <= CFG.MachineClear then
+            if pp and (pp - pos).Magnitude <= 10 then -- Reduced from MachineClear to 10
                 return true
             end
         end
@@ -469,7 +469,7 @@ local function isInPlaceArea(obj)
         return true
     end
     
-    -- Additional check: Check if object name contains place-related words
+    -- Check if object name contains place-related words
     local n = string.lower(obj.Name)
     if hasAny(n, PLACE_AREA_WORDS) then
         return true
@@ -622,7 +622,7 @@ local function backToSafe()
     end
 end
 
--- ===== IMPROVED pickEgg with Place Area Filter =====
+-- ===== IMPROVED pickEgg with Fixed Place Area Filter =====
 local function pickEgg()
     local r = getRoot()
     if not r then
@@ -652,7 +652,7 @@ local function pickEgg()
                         -- Check ancestor chain
                         local chain = chainOf(obj)
                         if not hasAny(chain, BAD_ANCESTOR) then
-                            -- CRITICAL: Skip eggs in Place Area
+                            -- CRITICAL: Skip eggs in Place Area (but only if truly in place area)
                             if not isInPlaceArea(obj) then
                                 spawnEggCount = spawnEggCount + 1
                                 
@@ -1685,7 +1685,7 @@ local function showWelcomePopup()
         Size = UDim2.new(1, -40, 0, 80),
         Position = UDim2.new(0, 20, 0, 170),
         BackgroundTransparency = 1,
-        Text = "v2.2 Dark Pink Premium Edition\nAuto Steal lebih pintar\nUI lebih clean & modern",
+        Text = "v2.1 Dark Pink Premium Edition\nAuto Steal lebih pintar\nUI lebih clean & modern",
         TextColor3 = C.Muted,
         Font = Enum.Font.Gotham,
         TextSize = 14,
@@ -1716,7 +1716,7 @@ local function showWelcomePopup()
         Size = UDim2.new(1, -40, 0, 30),
         Position = UDim2.new(0, 20, 0, 390),
         BackgroundTransparency = 1,
-        Text = "kayeshiHUB v2.2",
+        Text = "kayeshiHUB v2.1",
         TextColor3 = C.Muted,
         Font = Enum.Font.Gotham,
         TextSize = 12,
@@ -1767,11 +1767,12 @@ local function buildUI()
         TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
     }, header)
     
-    local minBtn = btn(header, "Sembunyi", C.AccentDark, 28)
-    minBtn.Size = UDim2.fromOffset(88, 28)
-    minBtn.Position = UDim2.new(1, -98, 0, 12)
-    minBtn.TextSize = 11
-    minBtn.TextColor3 = C.Text
+    -- FIXED: Change button text to "Hide"
+    local hideBtn = btn(header, "Hide", C.AccentDark, 28)
+    hideBtn.Size = UDim2.fromOffset(88, 28)
+    hideBtn.Position = UDim2.new(1, -98, 0, 12)
+    hideBtn.TextSize = 11
+    hideBtn.TextColor3 = C.Text
     
     -- Sidebar
     local side = make("Frame", {
@@ -2197,7 +2198,7 @@ local function buildUI()
     end
     
     -- FIXED: Use Activated event for more reliable click detection
-    minBtn.Activated:Connect(function()
+    hideBtn.Activated:Connect(function()
         setMenu(false)
     end)
     
@@ -2345,4 +2346,4 @@ loop("autosave", 3, function()
 end)
 loop("ui", 0.4, refresh)
 
-notify("kayeshiHUB v2.2 aktif. K = menu, F = auto steal.")
+notify("kayeshiHUB v2.1 aktif. K = menu, F = auto steal.")
