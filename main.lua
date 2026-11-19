@@ -1,4 +1,4 @@
--- kayeshiHUB v2.3 - Dark Pink Premium Edition (ULTIMATE FIXED)
+-- kayeshiHUB v2.2 - Dark Pink Premium Edition (FIXED)
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local StarterGui = game:GetService("StarterGui")
@@ -21,7 +21,7 @@ local function notify(text)
     end)
 end
 
-notify("kayeshiHUB v2.3 memuat...")
+notify("kayeshiHUB v2.2 memuat...")
 
 -- ===== THEME DARK PINK =====
 local C = {
@@ -92,10 +92,10 @@ local MIN_STEPS = {
 }
 
 -- ===== KONSTANTA DETEKSI =====
-local BAD_NAME = {"hatch", "place", "plant", "incubat", "inventor", "shop", "machine", "npc", "sell", "buy", "tukar", "merchant", "vendor", "shopkeeper", "trader", "display", "showcase"}
-local BAD_ANCESTOR = {"hatch", "place", "plant", "incubat", "machine", "shop", "npc", "display", "showcase", "inventory", "mudagen", "mudargen", "reward", "merchant", "vendor", "shopkeeper", "trader"}
-local BAD_PROMPT = {"inventory", "place", "plant", "incubat", "hatch", "shop", "buy", "sell", "tukar", "merchant", "vendor"}
-local BAD_CHAIN = {"generator", "shop", "npc", "citadel", "merchant", "tukar", "swap", "event", "halloween", "pumpkins", "vendor", "shopkeeper", "trader"}
+local BAD_NAME = {"hatch", "place", "plant", "incubat", "inventor", "shop", "machine", "npc", "sell", "buy", "tukar"}
+local BAD_ANCESTOR = {"hatch", "place", "plant", "incubat", "machine", "shop", "npc", "display", "showcase", "inventory", "mudagen", "mudargen", "reward"}
+local BAD_PROMPT = {"inventory", "place", "plant", "incubat", "hatch", "shop", "buy", "sell", "tukar"}
+local BAD_CHAIN = {"generator", "shop", "npc", "citadel", "merchant", "tukar", "swap", "event", "halloween", "pumpkins"}
 
 -- ===== CONFIG =====
 local CFG = {
@@ -106,7 +106,6 @@ local CFG = {
     LowGraphics = false, Walk = false, WalkSpeed = 16, Jump = false, JumpPower = 50,
     AntiAFK = true, AfkIdle = 300, AutoSave = true,
     DetectionRadius = 500, ESPRadius = 500,
-    StealMode = "Tween",
 }
 local DEFAULT = {}
 for k, v in pairs(CFG) do
@@ -127,7 +126,6 @@ local baseWalk, baseJump = 16, 50
 local nextInv = 0
 local invFails = 0
 local minIdx = 1
-local welcomeShown = false
 
 -- ===== UTILITY FUNCTIONS =====
 local function refresh()
@@ -146,23 +144,30 @@ local function humanoid()
     return ch and ch:FindFirstChildOfClass("Humanoid")
 end
 
+-- FIXED TELEPORT - Safe teleport that doesn't go underground
 local function tpTo(pos)
     local ch = player.Character
     local r = ch and ch:FindFirstChild("HumanoidRootPart")
-    if r then
+    if r and pos then
+        -- Raycast to find ground
+        local ray = RaycastParams.new()
+        ray.FilterType = Enum.RaycastFilterType.Exclude
+        ray.FilterDescendantsInstances = {ch}
+        
+        local hit = workspace:Raycast(pos + Vector3.new(0, 50, 0), Vector3.new(0, -100, 0), ray)
+        local targetPos = pos
+        
+        if hit then
+            -- If there's ground below, position above it
+            targetPos = Vector3.new(pos.X, hit.Position.Y + 5, pos.Z)
+        else
+            -- No ground found, keep original position but add offset
+            targetPos = Vector3.new(pos.X, pos.Y + 3, pos.Z)
+        end
+        
+        -- Teleport with safe offset
         r.AssemblyLinearVelocity = Vector3.zero
-        ch:PivotTo(CFrame.new(pos + Vector3.new(0, 3, 0)))
-    end
-end
-
-local function tweenTo(pos)
-    local ch = player.Character
-    local r = ch and ch:FindFirstChild("HumanoidRootPart")
-    if r then
-        local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut)
-        local tween = TweenService:Create(ch, tweenInfo, {CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))})
-        tween:Play()
-        task.wait(0.5)
+        ch:PivotTo(CFrame.new(targetPos))
     end
 end
 
@@ -443,11 +448,7 @@ local function backToSafe()
     local p = safePos()
     local r = getRoot()
     if p and r and (r.Position - p).Magnitude > CFG.ReturnRadius then
-        if CFG.StealMode == "Tween" then
-            tweenTo(p)
-        else
-            tpTo(p)
-        end
+        tpTo(p)
     end
 end
 
@@ -461,7 +462,6 @@ local function pickEgg()
     local now = os.clock()
     local best
     local eggCount = 0
-    local validEggCount = 0
     local detectionRadius = CFG.DetectionRadius
     
     for obj in pairs(idx.egg) do
@@ -478,8 +478,6 @@ local function pickEgg()
                     if selOn(eggSel, info.key) and info.rank >= CFG.MinRank then
                         local chain = chainOf(obj)
                         if not hasAny(chain, BAD_ANCESTOR) then
-                            validEggCount = validEggCount + 1
-                            
                             local cand = {model = obj, part = part, info = info, dist = dist}
                             
                             if not best then
@@ -501,11 +499,7 @@ local function pickEgg()
     S.detectedEggs = eggCount
     
     if eggCount > 0 and not best then
-        if validEggCount > 0 then
-            S.status = string.format("%d egg valid, tapi tidak cocok dengan filter", validEggCount)
-        else
-            S.status = string.format("%d egg terdeteksi, tapi semuanya di area Place/NPC", eggCount)
-        end
+        S.status = string.format("Ditemukan %d egg, tapi tidak cocok dengan filter", eggCount)
     elseif eggCount == 0 then
         S.status = "Tidak ada egg terdeteksi dalam radius " .. detectionRadius
     end
@@ -521,12 +515,7 @@ local function steal(e)
             break
         end
         streamAround(e.part.Position)
-        
-        if CFG.StealMode == "Tween" then
-            tweenTo(e.part.Position)
-        else
-            tpTo(e.part.Position)
-        end
+        tpTo(e.part.Position)
         task.wait(0.15)
         
         local p
@@ -585,11 +574,7 @@ local function useMachine(p)
     local pos = promptPos(p)
     if pos then
         streamAround(pos)
-        if CFG.StealMode == "Tween" then
-            tweenTo(pos)
-        else
-            tpTo(pos)
-        end
+        tpTo(pos)
     end
     task.wait(0.1)
     firePrompt(p)
@@ -685,7 +670,7 @@ local function mainTick()
     end
 end
 
--- ===== WATER & VISUAL =====
+-- ===== VISUAL =====
 local function isWater(pos)
     local ok, res = pcall(function()
         local region = Region3.new(pos - Vector3.new(3, 3, 3), pos + Vector3.new(3, 3, 3)):ExpandToGrid(4)
@@ -713,7 +698,6 @@ local function collectVisuals()
     end
     
     local rp = root.Position
-    local checks = 0
     local now = os.clock()
     local espRadius = CFG.ESPRadius
     
@@ -734,8 +718,7 @@ local function collectVisuals()
                     local inWater
                     if c and now - c.at < 4 then
                         inWater = c.v
-                    elseif checks < 30 then
-                        checks += 1
+                    else
                         inWater = isWater(part.Position)
                         waterCache[obj] = {v = inWater, at = now}
                     end
@@ -1078,7 +1061,7 @@ end
 local function switch(page, label, key, onChange)
     local row = make("TextButton", {
         Size = UDim2.new(1, 0, 0, 36), BackgroundColor3 = C.Card, BorderSizePixel = 0,
-        AutoButtonColor = false, Text = "", 
+        AutoButtonColor = false, Text = "",
     }, page)
     corner(row, 10)
     make("UIStroke", {Color = C.PinkBorder, Transparency = 0.8, Thickness = 1}, row)
@@ -1318,7 +1301,7 @@ local function buildUI()
     -- Main Panel
     local main = make("Frame", {
         AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(PANEL_W, PANEL_H),
-        BackgroundColor3 = C.Panel, BorderSizePixel = 0, ZIndex = 10,
+        BackgroundColor3 = C.Panel, BorderSizePixel = 0,
     }, gui)
     corner(main, 16)
     make("UIStroke", {Color = C.PinkBorder, Transparency = 0.5, Thickness = 1}, main)
@@ -1326,59 +1309,58 @@ local function buildUI()
     uiRefs.scale = make("UIScale", {Scale = 1}, main)
     
     -- Header
-    local header = make("Frame", {Size = UDim2.new(1, 0, 0, 52), BackgroundColor3 = C.Side, BorderSizePixel = 0, ZIndex = 11}, main)
+    local header = make("Frame", {Size = UDim2.new(1, 0, 0, 52), BackgroundColor3 = C.Side, BorderSizePixel = 0}, main)
     corner(header, 16)
     
     local headerLogo = createLogo(header, 36)
     headerLogo.Position = UDim2.new(0, 12, 0.5, -18)
-    headerLogo.ZIndex = 12
     
     make("TextLabel", {
         Size = UDim2.new(0, 200, 0, 22), Position = UDim2.fromOffset(56, 6), BackgroundTransparency = 1,
         Text = "kayeshiHUB", TextColor3 = C.Text, Font = Enum.Font.GothamBold, TextSize = 18,
-        TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 12,
+        TextXAlignment = Enum.TextXAlignment.Left,
     }, header)
     
     local subtitle = make("TextLabel", {
         Size = UDim2.new(1, -130, 0, 14), Position = UDim2.fromOffset(56, 28), BackgroundTransparency = 1,
         TextColor3 = C.Muted, Font = Enum.Font.Gotham, TextSize = 10,
-        TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 12,
+        TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
     }, header)
     
-    local hideBtn = btn(header, "Hide", C.AccentDark, 28)
-    hideBtn.Size = UDim2.fromOffset(88, 28)
-    hideBtn.Position = UDim2.new(1, -98, 0, 12)
-    hideBtn.TextSize = 11
-    hideBtn.TextColor3 = C.Text
-    hideBtn.ZIndex = 12
+    local minBtn = btn(header, "Sembunyi", C.AccentDark, 28)
+    minBtn.Size = UDim2.fromOffset(88, 28)
+    minBtn.Position = UDim2.new(1, -98, 0, 12)
+    minBtn.TextSize = 11
+    minBtn.TextColor3 = C.Text
     
     -- Sidebar
     local side = make("Frame", {
         Position = UDim2.fromOffset(10, 60), Size = UDim2.new(0, 140, 1, -126),
-        BackgroundColor3 = C.Side, BorderSizePixel = 0, ZIndex = 11,
+        BackgroundColor3 = C.Side, BorderSizePixel = 0,
     }, main)
     corner(side, 12)
     make("UIStroke", {Color = C.PinkBorder, Transparency = 0.7, Thickness = 1}, side)
     make("UIPadding", {PaddingTop = UDim.new(0, 8), PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8)}, side)
+    make("UIListLayout", {Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder}, side)
     
     -- Content Area
     local content = make("Frame", {
         Position = UDim2.fromOffset(158, 60), Size = UDim2.new(1, -168, 1, -126),
-        BackgroundColor3 = C.Side, BorderSizePixel = 0, ZIndex = 11,
+        BackgroundColor3 = C.Side, BorderSizePixel = 0,
     }, main)
     corner(content, 12)
     
     -- Footer
     local footer = make("Frame", {
         Position = UDim2.new(0, 10, 1, -60), Size = UDim2.new(1, -20, 0, 50),
-        BackgroundColor3 = C.Side, BorderSizePixel = 0, ZIndex = 11,
+        BackgroundColor3 = C.Side, BorderSizePixel = 0,
     }, main)
     corner(footer, 12)
     
     local statusLbl = make("TextLabel", {
         Size = UDim2.new(1, -20, 1, 0), Position = UDim2.fromOffset(10, 0), BackgroundTransparency = 1,
         TextColor3 = C.Muted, Font = Enum.Font.Gotham, TextSize = 11,
-        TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 12,
+        TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
     }, footer)
     
     -- Tabs
@@ -1392,8 +1374,9 @@ local function buildUI()
         local page = make("ScrollingFrame", {
             Position = UDim2.fromOffset(8, 8), Size = UDim2.new(1, -16, 1, -16), BackgroundTransparency = 1,
             BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = C.Muted,
-            CanvasSize = UDim2.new(0, 0), Visible = false, ZIndex = 12,
+            CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, Visible = false,
         }, content)
+        make("UIListLayout", {Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder}, page)
         make("UIPadding", {PaddingRight = UDim.new(0, 8)}, page)
         pages[t[1]] = page
         
@@ -1401,7 +1384,6 @@ local function buildUI()
         b.LayoutOrder = i
         b.TextSize = 11
         b.TextColor3 = C.Muted
-        b.ZIndex = 12
         tabs[t[1]] = b
     end
     
@@ -1414,38 +1396,6 @@ local function buildUI()
     switch(mp, "Auto Steal", "AutoSteal")
     switch(mp, "Rarity tertinggi dulu", "RarityFirst")
     stepper(mp, "Tunggu prompt (detik)", "StealWait", 0.1, 0.5, 3)
-    
-    -- Steal Mode
-    section(mp, "Mode Steal")
-    
-    local modeFrame = make("Frame", {Size = UDim2.new(1, 0, 0, 40), BackgroundTransparency = 1}, mp)
-    
-    local tweenBtn = btn(modeFrame, "Tween", C.AccentDark, 36)
-    tweenBtn.Size = UDim2.new(0.5, -4, 1, 0)
-    tweenBtn.TextColor3 = C.Text
-    
-    local teleportBtn = btn(modeFrame, "Teleport", C.Row, 36)
-    teleportBtn.Size = UDim2.new(0.5, -4, 1, 0)
-    teleportBtn.Position = UDim2.new(0.5, 4, 0, 0)
-    teleportBtn.TextColor3 = C.Muted
-    
-    tweenBtn.MouseButton1Click:Connect(function()
-        CFG.StealMode = "Tween"
-        refresh()
-    end)
-    
-    teleportBtn.MouseButton1Click:Connect(function()
-        CFG.StealMode = "Teleport"
-        refresh()
-    end)
-    
-    table.insert(paints, function()
-        local isTween = CFG.StealMode == "Tween"
-        tweenBtn.BackgroundColor3 = isTween and C.AccentDark or C.Row
-        tweenBtn.TextColor3 = isTween and C.Text or C.Muted
-        teleportBtn.BackgroundColor3 = not isTween and C.AccentDark or C.Row
-        teleportBtn.TextColor3 = not isTween and C.Text or C.Muted
-    end)
     
     section(mp, "Detection Radius")
     stepper(mp, "Radius deteksi egg", "DetectionRadius", 50, 100, 1000)
@@ -1486,11 +1436,7 @@ local function buildUI()
     tpBtn.MouseButton1Click:Connect(function()
         local p = safePos()
         if p then
-            if CFG.StealMode == "Tween" then
-                tweenTo(p)
-            else
-                tpTo(p)
-            end
+            tpTo(p)
             S.status = "Teleport ke safe zone"
         else
             S.status = "Safe zone belum di-set"
@@ -1705,31 +1651,24 @@ local function buildUI()
     
     -- Status bar updates
     table.insert(paints, function()
-        subtitle.Text = string.format("Steal %d | Inv %d | Mode: %s", S.steal, S.inv, CFG.StealMode)
+        subtitle.Text = string.format("Steal %d | Inv %d", S.steal, S.inv)
         statusLbl.Text = string.format("%s | Egg: %d | Config: %s", S.status, S.detectedEggs, S.config)
     end)
     
-    -- ===== LOGO BUTTON =====
+    -- Logo button (minimized)
     local logo = make("TextButton", {
-        AnchorPoint = Vector2.new(0.5, 0.5), 
-        Size = UDim2.fromOffset(60, 60),
-        BackgroundColor3 = C.AccentDark,
-        BorderSizePixel = 0, 
-        AutoButtonColor = false, 
-        Visible = false,
-        Text = "", 
-        ZIndex = 999,
+        AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(52, 52),
+        BackgroundColor3 = C.Ink, BorderSizePixel = 0, AutoButtonColor = false, Visible = false,
+        Text = "", TextColor3 = C.Text, Font = Enum.Font.GothamBold, TextSize = 22, ZIndex = 5,
     }, gui)
-    corner(logo, 30)
-    make("UIStroke", {Color = C.Accent, Thickness = 3}, logo)
+    corner(logo, 26)
+    make("UIStroke", {Color = C.Accent, Thickness = 2}, logo)
     
-    local logoInner = createLogo(logo, 50)
-    logoInner.Position = UDim2.new(0.5, -25, 0.5, -25)
-    logoInner.ZIndex = 1000
+    local logoInner = createLogo(logo, 44)
+    logoInner.Position = UDim2.new(0.5, -22, 0.5, -22)
     
     uiRefs.logo = logo
     
-    -- setMenu function
     local function setMenu(open)
         main.Visible = open
         logo.Visible = not open
@@ -1753,13 +1692,8 @@ local function buildUI()
             setPage(key)
         end)
     end
-    
-    hideBtn.Activated:Connect(function()
+    minBtn.MouseButton1Click:Connect(function()
         setMenu(false)
-    end)
-    
-    logo.Activated:Connect(function()
-        setMenu(true)
     end)
     
     drag(logo,
@@ -1809,7 +1743,6 @@ if not okUI then
     notify("Menu gagal: " .. string.sub(tostring(errUI), 1, 150))
 end
 
--- FIXED: Input handling
 UIS.InputBegan:Connect(function(input, gameProcessed)
     lastActive = os.clock()
     if gameProcessed then
@@ -1900,4 +1833,4 @@ loop("autosave", 3, function()
 end)
 loop("ui", 0.4, refresh)
 
-notify("kayeshiHUB v2.3 aktif. K = menu, F = auto steal.")
+notify("kayeshiHUB v2.2 aktif. K = menu, F = auto steal.")
